@@ -47,6 +47,14 @@ python tools/compare_v1_v2.py                  # 同快照 v1/v2 字段对照
 python tools/pa_validation_regression.py       # test3/5/6 等价回归
 python tools/attribute_divergence.py           # 分歧归因 → md/10
 python tools/label_gray_samples.py             # 灰区样本后续走势标注
+
+python tools/export_html_report.py --regime tight_channel --setup   # 单文件 HTML 报告（含 K 线）
+python tools/export_html_report.py --live --timeframe 15m --open    # 真实行情 + 自动打开
+python tools/export_html_report.py --live --offline --timeframe 15m # 读基线缓存，不联网
+python tools/export_html_report.py --record records/.../xx.json     # 已存记录（无 K 线，降级）
+# api.binance.com 超时/被墙时换备用域名或走代理：
+python tools/export_html_report.py --live --timeframe 15m --base-url https://data-api.binance.vision
+python tools/export_html_report.py --live --timeframe 15m --proxy http://127.0.0.1:7890
 ```
 
 ## 决策链路（双入场路径）
