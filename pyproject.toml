@@ -1,0 +1,33 @@
+[project]
+name = "re-pa-agent"
+version = "0.1.0"
+description = "PA Engine v2 — 确定性层优先的价格行为决策引擎（LLM 仅处理灰区）"
+requires-python = ">=3.11"
+# 运行时只用标准库（dataclasses/json/pathlib/re/argparse/math/urllib）
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "ruff>=0.5",
+]
+# P0 之后如改为硬依赖原项目（Windows + MT5 环境）可启用：
+# v1 = ["pa-agent @ file:///../PA_Agent"]
+
+[project.scripts]
+pa-engine = "pa_engine.main:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["pa_engine*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

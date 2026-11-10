@@ -1,0 +1,158 @@
+{
+  "_configure": {
+    "_comment": "JSON 无行注释语法，本项目把所有说明集中在本段：pa_engine/config/settings.py 加载时整段忽略，仅作文档与 run.py --check-config 的说明来源；gaps 列出各未完成缺口运行起来所需的配置。",
+    "required": [
+      "data.source",
+      "data.symbol",
+      "data.timeframe"
+    ],
+    "required_when_llm_enabled": [
+      "provider.base_url",
+      "provider.api_key"
+    ],
+    "optional": [
+      "data.market",
+      "data.base_url",
+      "data.bar_count",
+      "data.api_key",
+      "data.api_secret"
+    ],
+    "notes": {
+      "data.source": "数据源选择器：binance（已实现，pa_engine/data/binance.py）| synthetic | mt5 | tushare（后三者仅占位）",
+      "data.symbol": "币安交易对，如 BTCUSDT / ETHUSDT",
+      "data.timeframe": "币安周期：1m/3m/5m/15m/30m/1h/2h/4h/6h/8h/12h/1d/3d/1w/1M",
+      "data.market": "spot 或 futures；决定默认 base_url",
+      "data.base_url": "留空自动选择；走代理/镜像时填代理地址",
+      "data.api_key": "公共 K 线无需鉴权；私有接口才填",
+      "data.api_secret": "公共 K 线无需鉴权；私有接口才填",
+      "provider.api_key": "engine.llm_enabled=true 时必填；公共行情不需要"
+    },
+    "gaps": {
+      "data_adapter": {
+        "status": "已实现",
+        "summary": "币安 K 线抓取：GET {base}/api/v3/klines（spot）或 /fapi/v1/klines（futures），只保留已收盘 K 线",
+        "cli": "python run.py --live   # 读本段 data.* 抓取后直接跑完整决策",
+        "needed": {
+          "data.source": "binance（synthetic/mt5/tushare 仅占位）",
+          "data.symbol": "必填，如 BTCUSDT",
+          "data.timeframe": "必填，1m/3m/5m/15m/30m/1h/2h/4h/6h/8h/12h/1d/3d/1w/1M",
+          "data.bar_count": "1–1000，币安单次上限",
+          "data.market": "spot 或 futures，决定默认域名",
+          "data.base_url": "留空=自动；走代理/镜像才填",
+          "data.request_timeout_seconds": "HTTP 超时，默认 10"
+        },
+        "not_needed": "data.api_key / data.api_secret：公共 K 线免鉴权，适配器不发 X-MBX-APIKEY",
+        "code_gap": "已接通 pipeline.decide；历史分页 fetch_klines_history 支持基线与回放批量取数；仍缺轮询调度（--live 每次按 data.bar_count 全量抓取）"
+      },
+      "notify": {
+        "status": "未实现",
+        "summary": "决策推送：notify.* 仅被 NotifySettings 解析，仓库内无调用点",
+        "needed": {
+          "notify.pushplus_token": "PushPlus 渠道，与飞书二选一",
+          "notify.feishu_webhook_url": "飞书机器人 webhook，与 PushPlus 二选一",
+          "notify.feishu_secret": "飞书签名校验密钥，可选",
+          "records.dir": "推送引用的记录目录，默认 records"
+        },
+        "code_gap": "新增发送器模块并在 pipeline 终态挂钩"
+      },
+      "v1_replay": {
+        "status": "已实现",
+        "summary": "v1 AnalysisRecord 逐条复算 + 字段级一致率（价格容差 0.2%/2跳，含 N/A 字段统计）",
+        "needed": {
+          "v1.path": "v1 路径，代码默认 ../PA_Agent；JSON 顶层刻意不写 v1 段（测试断言其不存在），需要覆盖时临时加 {\"v1\": {\"path\": \"...\"}}",
+          "records.dir": "v2 记录落盘目录，默认 records"
+        },
+        "cli": "python tools/replay_v1_records.py --self-test / --records <v1 目录>",
+        "optional_env": "比对环境需单独安装 PA_Agent 依赖；v2 运行时不需要",
+        "code_gap": "无；无 v1 记录时输出 samples=0, status=N/A，不伪造一致率"
+      },
+      "gui": {
+        "status": "未实现",
+        "summary": "图形界面：v2 只有 CLI（--check / --check-config / --demo / --regime）",
+        "needed": {
+          "records.dir": "界面读取历史记录的唯一入口，默认 records"
+        },
+        "code_gap": "无 GUI 模块；v1 用 PyQt/PySide，接入会引入重依赖"
+      },
+      "perception_nodes": {
+        "status": "已实现",
+        "summary": "§4.1/4.2、§6.1/6.2/6.6、§7.1–7.4、§8.1–8.3、§9.0P/9.4/9.6/9.7、§14 已接入流水线：代码出证据，边界交灰区",
+        "needed": {
+          "engine.llm_enabled": "true 时灰区才调用真实感知层；false 只走代码决策",
+          "provider.base_url": "OpenAI 兼容根地址，启用时必填",
+          "provider.api_key": "启用时必填，明文落盘",
+          "provider.model": "默认 deepseek-chat",
+          "provider.context_window": "默认 128000，参与 prompt 预算",
+          "engine.llm_timeout_seconds": "默认 60",
+          "engine.llm_temperature": "默认 0"
+        },
+        "code_gap": "无；灰区输入仍受 GrayZone.MAX_PROMPT_BYTES=10KB 硬约束"
+      },
+      "gray_zone_calibration": {
+        "status": "已标定",
+        "summary": "BAND=0.05（真实行情 480 滑窗：灰区 22.29%，相对 band=0 翻转率 0%）",
+        "needed": {
+          "data.*": "真实历史 K 线；基线结果缓存在 records/baseline/klines",
+          "engine.llm_enabled": "先 false 跑纯代码基线，再开 http 采样灰区",
+          "records.dir": "保存灰区样本用于回算带宽"
+        },
+        "cli": "python tools/baseline_measure.py / python tools/calibrate_band.py --write / python tools/quarterly_review.py",
+        "note": "标定结果写入 pa_engine/config/thresholds.py（唯一来源），不进 JSON"
+      },
+      "audit_loop": {
+        "status": "已实现",
+        "summary": "灰区样本 JSONL（脱敏）+ 自一致性投票 + 分歧归因 + 季度阈值复核",
+        "needed": {
+          "records.dir": "灰区样本与审计报告根目录，默认 records",
+          "engine.llm_enabled": "样本落盘仅在真实灰区调用后触发"
+        },
+        "cli": "python tools/attribute_divergence.py / python tools/label_gray_samples.py / python run.py --live --vote 3",
+        "code_gap": "无；样本累计 ≥500 条后可用于 P4 蒸馏（本轮跳过）"
+      },
+      "incremental": {
+        "status": "已实现",
+        "summary": "读取同品种同周期上次 v2 记录，计算新增已收盘K线并作为灰区锚点（不改变代码判定）",
+        "needed": {
+          "records.dir": "上次记录所在目录，默认 records"
+        },
+        "cli": "python run.py --live --incremental",
+        "code_gap": "无"
+      }
+    }
+  },
+  "provider": {
+    "model": "deepseek-chat",
+    "base_url": "https://api.deepseek.com/v1",
+    "api_key": "",
+    "api_key_encrypted": "",
+    "thinking": true,
+    "reasoning_effort": "low",
+    "context_window": 128000,
+    "fallbacks": [],
+    "backup_glm_api_key": ""
+  },
+  "engine": {
+    "llm_enabled": false,
+    "llm_timeout_seconds": 60,
+    "llm_temperature": 0
+  },
+  "records": {
+    "dir": "records"
+  },
+  "data": {
+    "source": "binance",
+    "symbol": "BTCUSDT",
+    "timeframe": "15m",
+    "bar_count": 100,
+    "market": "spot",
+    "base_url": "",
+    "api_key": "",
+    "api_secret": "",
+    "request_timeout_seconds": 10
+  },
+  "notify": {
+    "pushplus_token": "",
+    "feishu_webhook_url": "",
+    "feishu_secret": ""
+  }
+}

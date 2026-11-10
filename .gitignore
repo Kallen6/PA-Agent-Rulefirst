@@ -1,0 +1,53 @@
+# ===== Python 缓存 =====
+__pycache__/
+*.py[cod]
+
+# ===== 虚拟环境 =====
+.venv/
+venv/
+env/
+
+# ===== 测试与静态检查缓存 =====
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+
+# ===== 构建产物 =====
+build/
+dist/
+*.egg-info/
+*.egg
+
+# ===== IDE / 编辑器 =====
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ===== 操作系统 =====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== 密钥与本地配置（只提交 config/settings.example.json）=====
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+config/settings.json
+config/settings.local.json
+
+# ===== 运行产物（代码会自动重建目录）=====
+records/
+logs/
+*.log
+*.tmp
+*.bak
+*.orig
+
+md/
