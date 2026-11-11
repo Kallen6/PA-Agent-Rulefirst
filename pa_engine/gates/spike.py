@@ -164,6 +164,50 @@ def gate_3_2(frame: FrameLike, ctx: GateContext) -> GateResult:
     )
 
 
+@register("3.4")
+def gate_3_4(frame: FrameLike, ctx: GateContext) -> GateResult:
+    """尖峰后是否出现第一次暂停/回撤（v1 §3.4：SPS 触发前提，回撤 2–4 根）。"""
+    a = assess_spike(frame, ctx)
+    if a.run is None or not a.qualifies:
+        return GateResult(
+            "3.4", "n/a", "none", 0.85, {"run": None}, "非有效尖峰，暂停判定不适用"
+        )
+    run = a.run
+    if run.end_seq == 1:
+        return GateResult(
+            node_id="3.4",
+            answer=False,
+            branch="ongoing",
+            confidence=0.85,
+            evidence={"pause_bars": 0, "run_end_seq": 1, "direction": run.direction},
+            reason="尖峰仍在进行中，尚无暂停/回撤",
+        )
+    pause_bars = run.end_seq - 1
+    in_window = (
+        Spike.FIRST_PAUSE_MIN_BARS <= pause_bars <= Spike.FIRST_PAUSE_MAX_BARS
+    )
+    branch = (
+        "pause"
+        if in_window
+        else ("no_pause" if pause_bars < Spike.FIRST_PAUSE_MIN_BARS else "long_pause")
+    )
+    return GateResult(
+        node_id="3.4",
+        answer=in_window,
+        branch=branch,
+        confidence=0.8,
+        evidence={
+            "pause_bars": pause_bars,
+            "run_end_seq": run.end_seq,
+            "direction": run.direction,
+        },
+        reason=(
+            f"尖峰结束后已回撤 {pause_bars} 根"
+            + (" → 首次暂停成立（SPS 前提）" if in_window else "，不在 2–4 根窗口内")
+        ),
+    )
+
+
 @register("3.5")
 def gate_3_5(frame: FrameLike, ctx: GateContext) -> GateResult:
     a = assess_spike(frame, ctx)

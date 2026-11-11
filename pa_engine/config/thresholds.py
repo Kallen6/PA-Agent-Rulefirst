@@ -68,6 +68,7 @@ class Prefill:
     ALWAYS_IN_NEAR_SAME_SIDE = 0.65
     ALWAYS_IN_SAME_SIDE = 0.70
     ALWAYS_IN_PULLBACK_ATR = 1.5
+    TWENTY_GB_MIN_BARS = 20              # 20GB：连续 ≥20 根整根未触 EMA（v1 文件20）
     SIGNAL_BAR_LONG_ATR = 2.0
 
 
@@ -83,6 +84,8 @@ class Spike:
     CLIMAX_WICK_TO_BODY_MIN = 0.50      # 衰竭：尾线 > 实体 50%
     CLIMAX_BODY_TO_MEAN_MAX = 0.30      # 衰竭：实体 < 近期均值 30%
     SPIKE_DISPLACEMENT_RANGE_MULT = 1.0  # 尖峰高度须 ≥1.0× 先前盘整宽度（区别于回撤）
+    FIRST_PAUSE_MIN_BARS = 2            # §3.4 首次暂停/回撤窗口下限（SPS 前提）
+    FIRST_PAUSE_MAX_BARS = 4            # §3.4 首次暂停/回撤窗口上限
 
 
 class Channel:
@@ -143,7 +146,7 @@ class Wedge:
 
     LOOKBACK = 40
     PUSH_COUNT = 3                      # 三推需要 3 个同向推进
-    DECAY_RATIO = 0.85                  # 后一推幅度 ≤ 前一推 ×0.85 → 动能衰减
+    # 注：decay 判据为「逐推幅度不增」（wedge.py 实现），不设系数阈值
     CONTRACTION_RATIO = 0.75            # 末段振幅 / 首段振幅 ≤0.75 → 收敛
     PARABOLIC_SLOPE_RATIO = 1.60        # 末推斜率 ≥ 首推 ×1.6 → 抛物线
 
@@ -170,7 +173,7 @@ class Range:
 class Guard:
     """§14 禁止行为守卫。"""
 
-    STRUCTURE_FLIP_COOLDOWN_BARS = 0    # 预留：结构翻转冷却（v1 默认 0）
+    STRUCTURE_FLIP_COOLDOWN_BARS = 0    # 结构翻转冷却（v1 默认 0；>0 且 --incremental 锚定时生效）
 
 
 class Risk:

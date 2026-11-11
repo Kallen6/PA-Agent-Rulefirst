@@ -29,6 +29,7 @@ ALLOWED_CYCLE_POSITIONS = (
 ALLOWED_DIRECTIONS = ("bullish", "bearish", "neutral")
 ALLOWED_ALWAYS_IN = ("bullish", "bearish", "none")
 ALLOWED_QUALITY = ("pass", "fail", "weak")
+ALLOWED_LEGIBILITY = ("clear", "confused", "unknown")
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,8 @@ class GrayZoneAnswer:
     wedge_type: str = "none"
     entry_quality: str = "unknown"
     second_entry: str = "unknown"
+    # 「看不懂」出口（v1 §0.1 对齐）：confused → 撤销方案（wait），不推翻周期与方向
+    market_legibility: str = "unknown"
 
 
 ALLOWED_WEDGE_TYPES = ("none", "pullback", "reversal", "parabolic")
@@ -118,6 +121,9 @@ def parse_payload(data: dict[str, Any]) -> GrayZoneAnswer | None:
     second_entry = str(data.get("second_entry", "unknown"))
     if second_entry not in ALLOWED_SECOND_ENTRY:
         second_entry = "unknown"
+    legibility = str(data.get("market_legibility", "unknown"))
+    if legibility not in ALLOWED_LEGIBILITY:
+        legibility = "unknown"
 
     return GrayZoneAnswer(
         cycle_position=cp,
@@ -132,4 +138,5 @@ def parse_payload(data: dict[str, Any]) -> GrayZoneAnswer | None:
         wedge_type=wedge_type,
         entry_quality=entry_quality,
         second_entry=second_entry,
+        market_legibility=legibility,
     )

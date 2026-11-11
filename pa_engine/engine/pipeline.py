@@ -16,7 +16,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Protocol
 
 from pa_engine.config.thresholds import GrayZone as GZ
-from pa_engine.config.thresholds import Prefill, Risk
+from pa_engine.config.thresholds import Guard, Prefill, Risk
 from pa_engine.engine.gray_zone import (
     GrayZoneVerdict,
     Measurement,
@@ -32,7 +32,7 @@ from pa_engine.gates.risk import TradePlan, prepare_plan
 from pa_engine.prefill import build_trend_context, judge_always_in, judge_direction
 
 STAGE1_GATES = (
-    "3.1", "3.2", "3.3", "3.5", "3.6", "3.7",
+    "3.1", "3.2", "3.3", "3.4", "3.5", "3.6", "3.7",
     "4.1", "4.2",
     "5.1", "5.2", "5.3", "5.4", "5.5",
     "6.1", "6.2", "6.3", "6.4", "6.5", "6.6",
@@ -43,6 +43,15 @@ SIGNAL_ENTRY_GATES = ("9.2", "9.3", "9.5", "9.7")
 CONTEXT_ENTRY_GATES = ("9.1", "9.4", "9.6")
 RISK_GATES = ("10.1", "10.2", "10.3")
 ORDER_GATES = ("11.1", "11.2", "11.3", "11.4")
+
+# v1 语义对齐（PA_Agent/pa_agent/ai/decision_tree.py:611-655）：
+# 仅 §10.3 交易者方程否决与 §14 禁令触发允许 reject；
+# §10.1/§10.2 失败 = 无有效止损方案，无方案可拒绝，终态必须是 wait。
+_REJECT_NODES = ("14", "10.3")
+
+
+def _terminal_outcome_for(node_id: str) -> str:
+    return "reject" if node_id in _REJECT_NODES else "wait"
 
 CHANNELS = ("micro_channel", "tight_channel", "normal_channel", "broad_channel")
 RANGE_STATES = ("trading_range", "trending_tr", "extreme_tr")
@@ -75,6 +84,9 @@ def _prefill_results(frame: FrameLike, ctx: GateContext) -> tuple[list[GateResul
 
     ctx.extras["direction"] = direction.direction
     ctx.extras["always_in"] = always_in.always_in
+    ctx.extras["twenty_gb"] = always_in.twenty_gb
+    ctx.extras["twenty_gb_side"] = always_in.twenty_gb_side
+    ctx.extras["twenty_gb_first_touch"] = always_in.twenty_gb_first_touch
     ctx.extras["relationship"] = context["relationship"]
     ctx.extras["background_direction"] = context["background_direction"]
 
@@ -103,6 +115,7 @@ def _prefill_results(frame: FrameLike, ctx: GateContext) -> tuple[list[GateResul
                 "near_ratio": round(always_in.near_ratio, 4),
                 "bg_ratio": round(always_in.bg_ratio, 4),
                 "strength": always_in.strength,
+                "twenty_gb": always_in.twenty_gb,
             },
             reason=always_in.reason,
         ),
@@ -595,6 +608,29 @@ def decide(
 
     structure = compute_simple_market_features(frame)
 
+    # 结构翻转冷却（v1 校验器行为，two_stage.py structure_flip_cooldown_bars）：
+    # 仅当 --incremental 锚定存在且 cooldown>0 时生效——本轮方向与上次记录相异
+    # 且新增K线数未达冷却窗口 → §14 追加 structure_flip_cooldown 禁令（终态 wait）。
+    # 默认 Guard.STRUCTURE_FLIP_COOLDOWN_BARS=0 完全禁用，单次决策行为不变。
+    cooldown = Guard.STRUCTURE_FLIP_COOLDOWN_BARS
+    if cooldown > 0 and anchor_record is not None:
+        prev_info = anchor_record.get("previous") or {}
+        prev_direction = prev_info.get("direction")
+        new_bars = int(anchor_record.get("new_bars") or 0)
+        if (
+            prev_direction in ("bullish", "bearish")
+            and meta.get("direction") in ("bullish", "bearish")
+            and prev_direction != meta.get("direction")
+            and new_bars < cooldown
+        ):
+            ctx.extras["structure_flip_blocked"] = True
+            ctx.extras["structure_flip_info"] = {
+                "previous_direction": prev_direction,
+                "current_direction": meta.get("direction"),
+                "new_bars": new_bars,
+                "cooldown": cooldown,
+            }
+
     patterns = list(ctx.extras.get("patterns") or [])
     reversal_a = ctx.extras.get("reversal_assessment")
     wedge_a = ctx.extras.get("wedge_assessment")
@@ -712,7 +748,7 @@ def decide(
         trade_ok = False
     elif blocker is not None:
         terminal_node = blocker.node_id
-        terminal_outcome = "reject" if blocker.node_id in ("14",) else "wait"
+        terminal_outcome = _terminal_outcome_for(blocker.node_id)
         reason = f"§{blocker.node_id} 阻断：{blocker.reason}"
         trade_ok = False
     elif plan is None:
@@ -723,7 +759,7 @@ def decide(
         risk_fail = _risk_blocker(results)
         if risk_fail is not None:
             terminal_node = risk_fail.node_id
-            terminal_outcome = "reject"
+            terminal_outcome = _terminal_outcome_for(risk_fail.node_id)
             reason = f"§{risk_fail.node_id} 未通过：{risk_fail.reason}"
             trade_ok = False
         else:
@@ -822,6 +858,20 @@ def decide(
 
             # 只让 LLM 覆盖感知字段；周期/方向仍以代码为准（方向是程序节点 §2.3）。
             # 信号棒质量只否决信号棒路径；计划型限价本来就不要求信号棒。
+            # 「看不懂」出口（v1 §0.1/§0.2 对齐）：感知层判 confused → 撤销方案等 wait，
+            # 不推翻代码周期与方向（对任何入场路径生效）。
+            if (
+                trade_ok
+                and plan is not None
+                and str(llm_answer.get("market_legibility") or "unknown") == "confused"
+            ):
+                _revoke_plan(
+                    decision,
+                    node_id="0.1",
+                    label="LLM复核：当前市场可读性不足（看不懂），撤销方案等待",
+                )
+                trade_ok = False
+
             if (
                 trade_ok
                 and plan is not None
@@ -944,6 +994,7 @@ def _normalize_llm_reply(reply: Any) -> dict[str, Any]:
         "wedge_type": answer.wedge_type,
         "entry_quality": answer.entry_quality,
         "second_entry": answer.second_entry,
+        "market_legibility": answer.market_legibility,
     }
 
 

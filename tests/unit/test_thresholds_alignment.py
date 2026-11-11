@@ -69,7 +69,6 @@ def test_new_threshold_groups_are_complete() -> None:
     assert 0 < t.Entry.BACKGROUND_LIMIT_MIN_ATR < t.Entry.BACKGROUND_LIMIT_MAX_ATR
     assert t.Entry.FIRST_ENTRY_MAX_HL < t.Entry.SECOND_ENTRY_MIN_HL < t.Entry.THIRD_ENTRY_MIN_HL
     assert 0 < t.Reversal.REVERSAL_CLOSE_POS < 1
-    assert 0 < t.Wedge.DECAY_RATIO <= 1
     assert 0 < t.Wedge.CONTRACTION_RATIO <= 1
     assert t.Wedge.PARABOLIC_SLOPE_RATIO > 1
     assert 0 < t.Triangle.CONTRACTION_RATIO <= 1

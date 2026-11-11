@@ -29,6 +29,15 @@ def collect_violations(frame: FrameLike, ctx: GateContext) -> list[str]:
     if direction in ("bullish", "bearish") and always_in in ("bullish", "bearish"):
         if direction != always_in:
             flags.append("counter_trend_always_in")
+    # 20GB：连续 ≥20 根整根未触 EMA → 绝对不逆势（v1 文件20，强于普通 AlwaysIn 规则）
+    gb_side = ctx.extras.get("twenty_gb_side")
+    if (
+        direction in ("bullish", "bearish")
+        and ctx.extras.get("twenty_gb") is True
+        and gb_side in ("bullish", "bearish")
+        and direction != gb_side
+    ):
+        flags.append("twenty_gb_counter")
     # 「逆势」以 Always In（近端主判）为准；长程背景仅作参考（v1 §2.4）。
     if (
         ctx.extras.get("reversal_attempt") is True
@@ -47,6 +56,9 @@ def collect_violations(frame: FrameLike, ctx: GateContext) -> list[str]:
         flags.append("barbwire")
     if entry_style == "background_limit" and str(ctx.extras.get("stop_reference") or "") != "structure":
         flags.append("no_structure_stop")
+    # 结构翻转冷却：锚定记录方向与本轮相异且新增K线未达冷却窗口（pipeline 预置）
+    if ctx.extras.get("structure_flip_blocked") is True:
+        flags.append("structure_flip_cooldown")
 
     if direction in ("bullish", "bearish"):
         sf = structure_of(frame, ctx)

@@ -287,7 +287,31 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="读取同品种同周期上次记录，作为灰区提示词锚点（不影响代码判定）",
     )
+    parser.add_argument(
+        "--web",
+        action="store_true",
+        help="启动本地网页决策台（浏览器图形化配置与决策，默认零文件落盘）",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8788,
+        help="--web 的监听端口（默认 8788）",
+    )
     args = parser.parse_args(argv)
+    if args.web:
+        import threading
+        import webbrowser
+
+        from pa_engine.web.server import serve
+
+        if not args.live and not args.regime and not args.check and not args.demo:
+            url = f"http://127.0.0.1:{args.port}"
+            threading.Timer(
+                0.6, lambda: webbrowser.open(url), args=()
+            ).start()
+        serve(host="127.0.0.1", port=args.port, records_dir=args.records_dir)
+        return 0
     if args.check:
         return _cmd_check()
     if args.check_config:

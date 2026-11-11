@@ -24,6 +24,7 @@ VOTE_FIELDS = (
     "entry_quality",
     "second_entry",
     "reversal_attempt",
+    "market_legibility",
 )
 
 # 分歧过大时的保守取值：宁可少下判断，也不放大感知层噪声
@@ -36,6 +37,7 @@ CONSERVATIVE: dict[str, Any] = {
     "entry_quality": "unknown",
     "second_entry": "unknown",
     "reversal_attempt": False,
+    "market_legibility": "unknown",
 }
 
 
@@ -96,6 +98,7 @@ def _normalize(reply: Any) -> dict[str, Any] | None:
         "wedge_type": parsed.wedge_type,
         "entry_quality": parsed.entry_quality,
         "second_entry": parsed.second_entry,
+        "market_legibility": parsed.market_legibility,
     }
 
 

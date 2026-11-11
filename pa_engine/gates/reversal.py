@@ -11,7 +11,7 @@ v1 原文明确：§7 只提高反转**诊断**置信度，**禁止逆势入场*
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace as _dc_replace
 
 from pa_engine.config.thresholds import Reversal
 from pa_engine.data.types import KlineBar
@@ -184,6 +184,14 @@ def gate_7_1(frame: FrameLike, ctx: GateContext) -> GateResult:
 @register("7.2")
 def gate_7_2(frame: FrameLike, ctx: GateContext) -> GateResult:
     a = assess_reversal(frame, ctx)
+    # v1 文件20：20GB 后首次触 EMA 非反转 → 不标记 reversal_attempt，按回撤处理
+    if a.confirmed and ctx.extras.get("twenty_gb_first_touch") is True:
+        a = _dc_replace(
+            a,
+            confirmed=False,
+            confidence=0.7,
+            reason=a.reason + "；20GB 首次触 EMA，按回撤处理而非反转",
+        )
     branch = "reversal_attempt" if a.confirmed else ("line_broken" if a.trendline_broken else "no")
     ctx.extras["reversal_attempt"] = a.confirmed
     return GateResult(

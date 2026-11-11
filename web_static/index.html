@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PA 决策台 · re_pa_agent</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo-dot"></span>
+    <span class="brand-name">PA 决策台</span>
+    <span class="brand-sub">re_pa_agent · 价格行为决策引擎</span>
+  </div>
+  <div class="topbar-right">
+    <span class="conn" id="conn-status"><i class="dot dot-idle"></i><em>就绪</em></span>
+    <label class="switch">
+      <input type="checkbox" id="save-toggle">
+      <span class="track"><span class="thumb"></span></span>
+      <span class="switch-label">保存记录</span>
+    </label>
+    <button class="btn btn-ghost" id="history-btn">历史</button>
+  </div>
+</header>
+
+<main class="layout">
+  <aside class="panel-config">
+    <form id="config-form" autocomplete="off">
+      <section class="group">
+        <h2>数据来源</h2>
+        <div class="seg" id="source-seg">
+          <button type="button" class="seg-item active" data-value="regime">合成行情</button>
+          <button type="button" class="seg-item" data-value="live">实时行情</button>
+        </div>
+        <div id="regime-group">
+          <label class="field">
+            <span class="field-label">行情类型</span>
+            <select id="regime">
+              <option value="spike">尖峰</option>
+              <option value="micro_channel">微型通道</option>
+              <option value="tight_channel">紧凑通道</option>
+              <option value="normal_channel">常规通道</option>
+              <option value="broad_channel" selected>宽通道</option>
+              <option value="trending_tr">趋势型区间</option>
+              <option value="trading_range">震荡区间</option>
+              <option value="extreme_tr">极端混乱区间</option>
+            </select>
+          </label>
+          <label class="field field-inline">
+            <input type="checkbox" id="setup">
+            <span class="field-label">叠加合格信号棒</span>
+          </label>
+        </div>
+        <div id="live-group" class="hidden">
+          <label class="field">
+            <span class="field-label">交易对</span>
+            <input type="text" id="symbol" value="BTCUSDT" placeholder="BTCUSDT">
+          </label>
+          <div class="field-row">
+            <label class="field">
+              <span class="field-label">周期</span>
+              <select id="timeframe">
+                <option>1m</option><option>3m</option><option>5m</option>
+                <option selected>15m</option><option>30m</option><option>1h</option>
+                <option>2h</option><option>4h</option><option>1d</option>
+              </select>
+            </label>
+            <label class="field">
+              <span class="field-label">K线根数</span>
+              <input type="number" id="bar-count" value="101" min="20" max="1000">
+            </label>
+          </div>
+          <div class="field-row">
+            <label class="field">
+              <span class="field-label">市场</span>
+              <select id="market">
+                <option value="spot" selected>现货</option>
+                <option value="futures">合约</option>
+              </select>
+            </label>
+            <label class="field">
+              <span class="field-label">K线数上限</span>
+              <span class="field-static">1000</span>
+            </label>
+          </div>
+          <label class="field">
+            <span class="field-label">镜像域名（可选）</span>
+            <input type="text" id="base-url" placeholder="https://data-api.binance.vision">
+          </label>
+          <label class="field">
+            <span class="field-label">代理（可选）</span>
+            <input type="text" id="proxy" placeholder="http://127.0.0.1:7890">
+          </label>
+        </div>
+      </section>
+
+      <section class="group">
+        <h2>引擎参数</h2>
+        <label class="field">
+          <span class="field-label">感知层 LLM</span>
+          <select id="llm">
+            <option value="" selected>关闭（纯代码决策）</option>
+            <option value="mock">mock（离线替身）</option>
+            <option value="http">http（真实 API）</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">自一致性投票 <em id="vote-value" class="field-hint">关闭</em></span>
+          <input type="range" id="vote" min="0" max="5" step="1" value="0">
+        </label>
+        <label class="field">
+          <span class="field-label">灰区带宽 <em id="band-value" class="field-hint">默认 0.05</em></span>
+          <input type="range" id="band" min="0" max="15" step="1" value="0">
+        </label>
+      </section>
+
+      <button type="submit" class="btn btn-primary" id="run-btn">
+        <span class="btn-text">生成决策</span>
+        <span class="btn-loading hidden"><i class="spinner"></i>计算中…</span>
+      </button>
+      <p class="foot-note">默认不写任何文件；勾选「保存记录」后本次决策落盘 records/</p>
+    </form>
+  </aside>
+
+  <section class="panel-report">
+    <div class="summary-bar hidden" id="summary-bar">
+      <span class="badge" id="summary-badge">—</span>
+      <span class="summary-item" id="summary-symbol">—</span>
+      <span class="summary-item" id="summary-cycle">—</span>
+      <span class="summary-item" id="summary-terminal">—</span>
+      <span class="summary-item" id="summary-source">—</span>
+      <span class="summary-item saved hidden" id="summary-saved"></span>
+    </div>
+    <div class="banner hidden" id="error-banner"></div>
+    <div class="report-empty" id="report-empty">
+      <div class="empty-icon">▦</div>
+      <p>配置参数后点击「生成决策」<br>报告将在本页内嵌展示，不产生任何文件</p>
+    </div>
+    <iframe id="report-frame" class="hidden" title="决策报告"></iframe>
+  </section>
+</main>
+
+<div class="drawer-mask hidden" id="drawer-mask"></div>
+<aside class="drawer hidden" id="history-drawer">
+  <div class="drawer-head">
+    <h2>历史决策</h2>
+    <button class="btn btn-ghost" id="drawer-close">关闭</button>
+  </div>
+  <ul class="history-list" id="history-list">
+    <li class="muted">加载中…</li>
+  </ul>
+</aside>
+
+<script src="/app.js"></script>
+</body>
+</html>

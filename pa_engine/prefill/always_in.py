@@ -6,7 +6,7 @@ Gate1 加权同侧占比；Gate2 EMA 斜率；Gate3 摆动结构 + 浅回撤（�
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from pa_engine.config.thresholds import Prefill
 from pa_engine.data.types import KlineFrame
@@ -22,9 +22,96 @@ class AlwaysInResult:
     near_ratio: float
     bg_ratio: float
     reason: str
+    twenty_gb: bool = False
+    twenty_gb_side: str | None = None
+    twenty_gb_first_touch: bool = False
 
 
-def judge_always_in(frame: KlineFrame) -> AlwaysInResult:
+def _twenty_gb_state(frame: KlineFrame) -> tuple[int, str | None]:
+    """从 K1 向历史数连续「整根未触 EMA」的根数与方向（newest-first）。
+
+    「未触」= 整根区间完全在 EMA 单侧（low>ema 或 high<ema）。
+    返回 (run, side)；side 由 K1 所在一侧判定，中途触 EMA 或换侧即停。
+    """
+    bars = frame.bars
+    ema20 = frame.indicators.ema20
+    run = 0
+    side: str | None = None
+    for i, bar in enumerate(bars):
+        if i >= len(ema20):
+            break
+        try:
+            ema_val = float(ema20[i])
+            high = float(bar.high)
+            low = float(bar.low)
+        except (TypeError, ValueError):
+            break
+        if math.isnan(ema_val):
+            break
+        if low > ema_val:
+            bar_side = "bullish"
+        elif high < ema_val:
+            bar_side = "bearish"
+        else:
+            break
+        if side is None:
+            side = bar_side
+        elif side != bar_side:
+            break
+        run += 1
+    return run, side
+
+
+def _twenty_gb_just_ended(frame: KlineFrame) -> bool:
+    """20GB 后首次触 EMA：K1 触及 EMA 且此前 ≥TWENTY_GB_MIN_BARS 根整根未触。"""
+    bars = frame.bars
+    ema20 = frame.indicators.ema20
+    if not bars or not ema20:
+        return False
+    try:
+        ema_val = float(ema20[0])
+        high0 = float(bars[0].high)
+        low0 = float(bars[0].low)
+    except (TypeError, ValueError, IndexError):
+        return False
+    if math.isnan(ema_val) or not (low0 <= ema_val <= high0):
+        return False  # K1 未触 EMA，谈不上「首触」
+    run, _side = _twenty_gb_state_from(frame, start=1)
+    return run >= Prefill.TWENTY_GB_MIN_BARS
+
+
+def _twenty_gb_state_from(frame: KlineFrame, *, start: int) -> tuple[int, str | None]:
+    """同 _twenty_gb_state，但从 bars[start] 起数。"""
+    bars = frame.bars
+    ema20 = frame.indicators.ema20
+    run = 0
+    side: str | None = None
+    for i in range(start, len(bars)):
+        if i >= len(ema20):
+            break
+        try:
+            ema_val = float(ema20[i])
+            high = float(bars[i].high)
+            low = float(bars[i].low)
+        except (TypeError, ValueError):
+            break
+        if math.isnan(ema_val):
+            break
+        if low > ema_val:
+            bar_side = "bullish"
+        elif high < ema_val:
+            bar_side = "bearish"
+        else:
+            break
+        if side is None:
+            side = bar_side
+        elif side != bar_side:
+            break
+        run += 1
+    return run, side
+
+
+def _judge_core(frame: KlineFrame) -> AlwaysInResult:
     bars = frame.bars
     ema20 = frame.indicators.ema20
     atr14 = frame.indicators.atr14
@@ -51,6 +138,22 @@ def judge_always_in(frame: KlineFrame) -> AlwaysInResult:
         slope_lookback=Prefill.EMA_SLOPE_LOOKBACK,
         same_side=Prefill.ALWAYS_IN_SAME_SIDE,
     )
+
+    # 20GB：连续 ≥20 根整根未触 EMA → 绝对不逆势，方向强制为该侧（v1 文件20）
+    gb_run, gb_side = _twenty_gb_state(frame)
+    gb_active = gb_run >= Prefill.TWENTY_GB_MIN_BARS and gb_side in ("bullish", "bearish")
+
+    if gb_active:
+        base = _result(
+            str(gb_side),
+            near,
+            bg,
+            strength=f"（20GB：连续{gb_run}根未触EMA，绝对不逆势）",
+            label=f"Always In {'Long（AIL）' if gb_side == 'bullish' else 'Short（AIS）'}·20GB",
+            n_near=n_near,
+            n_bg=n_bg,
+        )
+        return replace(base, twenty_gb=True, twenty_gb_side=gb_side)
 
     if near["bull_core"]:
         return _result(
@@ -258,3 +361,11 @@ def _max_pullback_atr(frame: KlineFrame, window: int) -> float | None:
     if len(closes) < 2:
         return None
     return (max(closes) - min(closes)) / float(atr14[0])
+
+
+def judge_always_in(frame: KlineFrame) -> AlwaysInResult:
+    """公共入口：核心判定 + 20GB 首次触 EMA 标记（v1 文件20：首触非反转）。"""
+    result = _judge_core(frame)
+    if _twenty_gb_just_ended(frame):
+        return replace(result, twenty_gb_first_touch=True)
+    return result
