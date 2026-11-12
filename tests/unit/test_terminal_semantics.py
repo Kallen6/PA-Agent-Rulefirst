@@ -38,6 +38,6 @@ def test_llm_win_rate_rejection_is_reject() -> None:
     # §10.3 被方程否决 → reject（v1 语义允许）
     rows = make_regime_rows("broad_channel")
     llm = MockLLM({"estimated_win_rate": 5, "win_rate_reason": "结构弱"})
-    decision = decide(build_v2_frame(rows), llm=llm, band=1.0).decision
+    decision = decide(build_v2_frame(rows), llm=llm, band=1.0, stance="aggressive").decision
     assert decision["terminal"]["node_id"] == "10.3"
     assert decision["terminal"]["outcome"] == "reject"

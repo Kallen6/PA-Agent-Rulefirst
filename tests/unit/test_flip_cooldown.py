@@ -17,6 +17,7 @@ def test_cooldown_disabled_by_default() -> None:
     decision = decide(
         build_v2_frame(make_regime_rows("broad_channel")),
         anchor=_anchor("bearish", 1),
+        stance="aggressive",
     ).decision
     assert decision["terminal"]["outcome"] == "trade"
 
@@ -45,6 +46,7 @@ def test_cooldown_allows_same_direction() -> None:
         decision = decide(
             build_v2_frame(make_regime_rows("broad_channel")),
             anchor=_anchor("bullish", 1),
+            stance="aggressive",
         ).decision
         assert decision["terminal"]["outcome"] == "trade"
     finally:
@@ -58,6 +60,7 @@ def test_cooldown_expires_after_window() -> None:
         decision = decide(
             build_v2_frame(make_regime_rows("broad_channel")),
             anchor=_anchor("bearish", 6),
+            stance="aggressive",
         ).decision
         assert decision["terminal"]["outcome"] == "trade"
     finally:

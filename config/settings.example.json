@@ -25,6 +25,7 @@
       "data.base_url": "留空自动选择；走代理/镜像时填代理地址",
       "data.api_key": "公共 K 线无需鉴权；私有接口才填",
       "data.api_secret": "公共 K 线无需鉴权；私有接口才填",
+      "engine.decision_stance": "下单倾向档位：conservative（RR≥1.5）/ balanced（默认，RR≥1.2）/ aggressive（RR≥1.0）/ extreme_aggressive（方程余量放宽到 -5%）；只改执行门槛，不改周期与方向",
       "provider.api_key": "engine.llm_enabled=true 时必填；公共行情不需要"
     },
     "gaps": {
@@ -134,7 +135,8 @@
   "engine": {
     "llm_enabled": false,
     "llm_timeout_seconds": 60,
-    "llm_temperature": 0
+    "llm_temperature": 0,
+    "decision_stance": "balanced"
   },
   "records": {
     "dir": "records"

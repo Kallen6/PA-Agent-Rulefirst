@@ -19,6 +19,8 @@
     baseUrl: $("base-url"),
     proxy: $("proxy"),
     llm: $("llm"),
+    stance: $("stance"),
+    stanceValue: $("stance-value"),
     vote: $("vote"),
     voteValue: $("vote-value"),
     band: $("band"),
@@ -47,7 +49,15 @@
   var lastRequest = null;
 
   /* ── 配置记忆 ── */
-  var FIELDS = ["regime", "symbol", "timeframe", "bar-count", "market", "base-url", "proxy", "llm", "vote", "band"];
+  var FIELDS = ["regime", "symbol", "timeframe", "bar-count", "market", "base-url", "proxy", "llm", "stance", "vote", "band"];
+
+  /* 档位的生效参数（与 pa_engine/config/thresholds.py 的 Stance.PARAMS 对齐） */
+  var STANCE_HINTS = {
+    conservative: "保守 · RR≥1.5 / 方程≥+15%",
+    balanced: "均衡 · RR≥1.2 / 方程≥+5%",
+    aggressive: "激进 · RR≥1.0 / 方程≥0%",
+    extreme_aggressive: "极度激进 · RR≥1.0 / 方程≥-5%",
+  };
 
   function saveConfig() {
     var cfg = { source: source, save: els.saveToggle.checked };
@@ -78,6 +88,9 @@
     els.voteValue.textContent = v >= 2 ? v + " 次取多数" : (v === 1 ? "1 次（等同关闭）" : "关闭");
     var b = parseInt(els.band.value, 10);
     els.bandValue.textContent = b === 0 ? "默认 0.05" : (b / 100).toFixed(2);
+    if (els.stance && els.stanceValue) {
+      els.stanceValue.textContent = STANCE_HINTS[els.stance.value] || els.stance.value;
+    }
   }
 
   /* ── 数据来源切换 ── */
@@ -96,8 +109,9 @@
     if (btn) setSource(btn.dataset.value);
   });
 
-  [els.vote, els.band].forEach(function (el) {
+  [els.vote, els.band, els.stance].forEach(function (el) {
     el.addEventListener("input", function () { syncHints(); saveConfig(); });
+    el.addEventListener("change", function () { syncHints(); saveConfig(); });
   });
   FIELDS.forEach(function (id) {
     $(id).addEventListener("change", saveConfig);
@@ -128,6 +142,7 @@
       source: source,
       save: els.saveToggle.checked,
       llm: els.llm.value,
+      stance: els.stance.value,
       vote: parseInt(els.vote.value, 10) || 0,
     };
     if (els.band.value !== "0") payload.band = parseInt(els.band.value, 10) / 100;
@@ -152,8 +167,12 @@
     els.summaryBadge.textContent = outcomeZh;
     els.summaryBadge.className = "badge badge-" + outcome;
     els.summarySymbol.textContent = (summary.symbol || "—") + " " + (summary.timeframe || "");
+    var stance = summary.stance || {};
+    var stanceText = stance.label_zh
+      ? " 档位=" + stance.label_zh + (typeof stance.min_rr === "number" ? "（RR≥" + stance.min_rr + "）" : "")
+      : "";
     els.summaryCycle.textContent = "周期=" + (summary.cycle_position || "—")
-      + " 方向=" + (summary.direction || "—");
+      + " 方向=" + (summary.direction || "—") + stanceText;
     els.summaryTerminal.textContent = "§" + node + " · " + ((summary.terminal && summary.terminal.label) || "");
     els.summarySource.textContent = summary.source || "";
     if (savedPath) {

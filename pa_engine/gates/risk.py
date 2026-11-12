@@ -3,21 +3,35 @@
 节点映射（二元决策.txt §10）：
     §10.1 是否能明确止损   止损 = 信号棒极点外 1 跳（唯一标准）
     §10.2 止损是否过大     四条件任一成立即过大：
-                           RR<1:1 / >通道宽40% / >区间宽10% / >2×ATR
+                           RR<档位下限 / >通道宽40% / >区间宽10% / >2×ATR
     §10.3 交易者方程       胜率%×回报 > (100−胜率)%×风险（仅用 TP1）
 
 执行顺序（与 v1 一致）：
-    合成方案 → `prepare_plan()` 按 RR 上限 1.0 外扩止损（不超过尖峰高度 50%）
+    合成方案 → `prepare_plan()` 按档位 `target_rr` 外扩止损（不超过尖峰高度 50%）
     → §10.1/§10.2/§10.3 全部基于外扩后的方案判定。
+
+档位（`engine/stance.py`）：仅影响最低 RR 与方程余量，不改变方向/周期/入场路径。
+未注入档位时回落到 `Stance.DEFAULT`（均衡），保证纯代码路径与 v1 回放可用。
 
 输入来自 `GateContext.extras["trade_plan"]`（由流水线合成），闸门本身不做 IO、不调 LLM。
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING
 
 from pa_engine.config.thresholds import Risk
 from pa_engine.gates.base import GateContext, GateResult, FrameLike, register
+
+if TYPE_CHECKING:  # 仅类型标注；运行时延迟导入避免 engine ↔ gates 循环导入
+    from pa_engine.engine.stance import StancePolicy
+
+
+def _policy(ctx: GateContext) -> "StancePolicy":
+    """读取当前档位策略（延迟导入，规避包级循环依赖）。"""
+    from pa_engine.engine.stance import stance_of
+
+    return stance_of(ctx)
 
 
 @dataclass(frozen=True)
@@ -57,25 +71,32 @@ def risk_reward(plan: TradePlan) -> float:
     return reward_distance(plan) / risk if risk > 0 else 0.0
 
 
-def widen_stop_for_rr_cap(plan: TradePlan) -> tuple[TradePlan, dict]:
-    """RR>1 时把止损向外扩到 risk=reward；外扩距离不得超过尖峰高度 50%。
+def widen_stop_for_rr_cap(
+    plan: TradePlan, target_rr: float | None = None
+) -> tuple[TradePlan, dict]:
+    """RR 高于目标时把止损向外扩，使 RR 落到 ``target_rr``；外扩不超过尖峰高度 50%。
 
-    返回 (新方案, 证据)。RR≤1 或几何无法修正时原样返回。
+    ``target_rr`` 由档位提供（见 `engine/stance.py`）；不传时用兜底 1.0，
+    保持纯函数在无档位上下文中的既有行为。
+
+    返回 (新方案, 证据)。RR≤目标或几何无法修正时原样返回。
     """
+    target = Risk.MAX_TP1_RISK_REWARD_RATIO if target_rr is None else float(target_rr)
     rr = risk_reward(plan)
     evidence = {
         "rr_before": round(rr, 4),
         "risk_before": round(risk_distance(plan), 6),
+        "target_rr": round(target, 4),
         "changed": False,
         "capped": False,
     }
     if plan.direction not in ("bullish", "bearish") or risk_distance(plan) <= 0:
         return plan, evidence
-    if rr <= Risk.MIN_RR + 1e-9:
+    if rr <= target + 1e-9:
         return plan, evidence
 
     reward = reward_distance(plan)
-    target_risk = reward
+    target_risk = reward / target if target > 0 else reward
     cap = None
     if plan.spike_height and plan.spike_height > 0:
         cap = plan.spike_height * Risk.WIDEN_STOP_MAX_SPIKE_FRACTION
@@ -103,8 +124,10 @@ def widen_stop_for_rr_cap(plan: TradePlan) -> tuple[TradePlan, dict]:
 
 
 def prepare_plan(plan: TradePlan, ctx: GateContext) -> TradePlan:
-    """外扩止损并写入 ctx，供 §10.1–10.3 共用同一份方案。"""
-    widened, evidence = widen_stop_for_rr_cap(plan)
+    """按当前档位外扩止损并写入 ctx，供 §10.1–10.3 共用同一份方案。"""
+    policy = _policy(ctx)
+    widened, evidence = widen_stop_for_rr_cap(plan, policy.target_rr)
+    evidence["stance"] = policy.name
     ctx.extras["trade_plan"] = widened
     ctx.extras["stop_widen"] = evidence
     return widened
@@ -180,10 +203,12 @@ def gate_10_2(frame: FrameLike, ctx: GateContext) -> GateResult:
     plan = _plan_of(ctx)
     if plan is None:
         return GateResult("10.2", False, "no_plan", 0.95, {}, "无候选方案，止损大小不适用")
+    policy = _policy(ctx)
+    min_rr = policy.min_rr
     risk = risk_distance(plan)
     rr = risk_reward(plan)
     checks: dict[str, tuple[bool, float | None]] = {
-        "rr_below_1": (rr < Risk.MIN_RR - 1e-9, abs(rr - Risk.MIN_RR)),
+        "rr_below_1": (rr < min_rr - 1e-9, abs(rr - min_rr)),
         "channel_width": (
             plan.channel_width is not None and risk > plan.channel_width * Risk.STOP_FILTER_CHANNEL_WIDTH,
             None if plan.channel_width is None else abs(risk - plan.channel_width * Risk.STOP_FILTER_CHANNEL_WIDTH),
@@ -205,7 +230,7 @@ def gate_10_2(frame: FrameLike, ctx: GateContext) -> GateResult:
         if gap is None:
             continue
         base = {
-            "rr_below_1": Risk.MIN_RR,
+            "rr_below_1": min_rr,
             "channel_width": (plan.channel_width or 0) * Risk.STOP_FILTER_CHANNEL_WIDTH,
             "range_width": (plan.range_width or 0) * Risk.STOP_FILTER_RANGE_WIDTH,
             "atr": (plan.atr or 0) * Risk.STOP_FILTER_ATR_MULT,
@@ -226,6 +251,8 @@ def gate_10_2(frame: FrameLike, ctx: GateContext) -> GateResult:
         evidence={
             "risk": round(risk, 6),
             "rr": round(rr, 4),
+            "min_rr": min_rr,
+            "stance": policy.name,
             "channel_width": plan.channel_width,
             "range_width": plan.range_width,
             "atr": plan.atr,
@@ -237,9 +264,9 @@ def gate_10_2(frame: FrameLike, ctx: GateContext) -> GateResult:
             },
         },
         reason=(
-            f"风险{risk:.4g}触发{'/'.join(triggered)} → 止损过大"
+            f"风险{risk:.4g}触发{'/'.join(triggered)}（{policy.label_zh}档：RR≥{min_rr:g}）→ 止损过大"
             if triggered
-            else f"风险{risk:.4g}（RR={rr:.2f}）未触发四条件 → 止损可接受"
+            else f"风险{risk:.4g}（RR={rr:.2f}≥{min_rr:g}，{policy.label_zh}档）未触发四条件 → 止损可接受"
         ),
     )
 
@@ -258,6 +285,7 @@ def gate_10_3(frame: FrameLike, ctx: GateContext) -> GateResult:
             {"entry": plan.entry, "stop": plan.stop, "tp1": plan.tp1},
             "缺少估算胜率，交易者方程需灰区复核",
         )
+    policy = _policy(ctx)
     risk = risk_distance(plan)
     reward = reward_distance(plan)
     rr = risk_reward(plan)
@@ -265,16 +293,18 @@ def gate_10_3(frame: FrameLike, ctx: GateContext) -> GateResult:
     left = win * reward
     right = (100.0 - win) * risk
     equation_ok = left > right
-    rr_ok = rr >= Risk.MIN_RR - 1e-9
-    answer = equation_ok and rr_ok
+    # 带符号余量：负数表示期望为负；档位决定可接受的余量下限（极度激进允许轻微负值）。
+    gap = (left - right) / right if right > 0 else 1.0
+    rr_ok = rr >= policy.min_rr - 1e-9
+    gap_ok = gap >= policy.min_equation_gap - 1e-9
+    answer = rr_ok and gap_ok
     if not rr_ok:
         branch = "rr_below_1"
-    elif not equation_ok:
+    elif not gap_ok:
         branch = "equation_failed"
     else:
         branch = "passed"
-    gap = abs(left - right) / right if right > 0 else 1.0
-    conf = 0.6 if gap < 0.05 else 0.95
+    conf = 0.6 if abs(gap) < 0.05 else 0.95
     return GateResult(
         node_id="10.3",
         answer=answer,
@@ -288,6 +318,10 @@ def gate_10_3(frame: FrameLike, ctx: GateContext) -> GateResult:
             "risk": round(risk, 6),
             "reward": round(reward, 6),
             "rr": round(rr, 4),
+            "min_rr": policy.min_rr,
+            "equation_gap": round(gap, 4),
+            "min_equation_gap": policy.min_equation_gap,
+            "stance": policy.name,
             "estimated_win_rate": win,
             "equation_left": round(left, 6),
             "equation_right": round(right, 6),
@@ -295,8 +329,10 @@ def gate_10_3(frame: FrameLike, ctx: GateContext) -> GateResult:
             "stop_widen": ctx.extras.get("stop_widen", {}),
         },
         reason=(
-            f"RR={rr:.2f}、胜率{win:.0f}%：{win:.0f}%×{reward:.4g}={left:.4g} "
-            f"{'>' if equation_ok else '≤'} {(100 - win):.0f}%×{risk:.4g}={right:.4g}"
+            f"RR={rr:.2f}（≥{policy.min_rr:g}）、胜率{win:.0f}%："
+            f"{win:.0f}%×{reward:.4g}={left:.4g} "
+            f"{'>' if equation_ok else '≤'} {(100 - win):.0f}%×{risk:.4g}={right:.4g}；"
+            f"方程余量{gap:+.1%}（{policy.label_zh}档下限{policy.min_equation_gap:+.0%}）"
             f" → {'通过' if answer else '不通过'}"
         ),
     )

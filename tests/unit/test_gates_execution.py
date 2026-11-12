@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from tests.fixtures.synthetic import make_setup_rows
 from tests.support import build_v2_frame
 
+from pa_engine.engine.stance import apply_stance
 from pa_engine.gates.base import GATES, GateContext, run_all
 from pa_engine.gates.order import LIMIT_ORDER, NO_ORDER, STOP_ORDER, route_order
 from pa_engine.gates.risk import (
@@ -25,10 +26,12 @@ from pa_engine.gates.risk import (
 EXEC_NODES = ("9.0", "9.2", "9.3", "9.5", "10.1", "10.2", "10.3", "11.1", "11.2", "11.3", "11.4")
 
 
-def _ctx(direction: str = "bullish", **extras) -> GateContext:
+def _ctx(direction: str = "bullish", *, stance: str = "aggressive", **extras) -> GateContext:
+    """默认用激进档，保持既有断言基于 RR≥1.0 / 方程余量≥0 的原始口径。"""
     ctx = GateContext()
     ctx.extras["direction"] = direction
     ctx.extras.update(extras)
+    apply_stance(ctx, stance)
     return ctx
 
 

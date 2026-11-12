@@ -16,7 +16,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Protocol
 
 from pa_engine.config.thresholds import GrayZone as GZ
-from pa_engine.config.thresholds import Guard, Prefill, Risk
+from pa_engine.config.thresholds import Guard, Prefill, Risk, Stance
 from pa_engine.engine.gray_zone import (
     GrayZoneVerdict,
     Measurement,
@@ -24,6 +24,7 @@ from pa_engine.engine.gray_zone import (
     evaluate,
     measurements_from_results,
 )
+from pa_engine.engine.stance import apply_stance, stance_of
 from pa_engine.engine.trace import split_traces
 from pa_engine.features.structure import compute_simple_market_features, infer_price_tick
 from pa_engine.gates.base import GateContext, GateResult, FrameLike, atr_of, run_all
@@ -403,6 +404,7 @@ def _base_decision(
     patterns: list[str] | None = None,
     reversal: dict[str, Any] | None = None,
     wedge: dict[str, Any] | None = None,
+    stance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     stage1_trace, stage2_trace = split_traces(results)
     return {
@@ -410,6 +412,7 @@ def _base_decision(
         "direction": direction,
         "always_in": always_in,
         "gate_result": gate_result,
+        "stance": stance or {},
         "gate_trace": stage1_trace,
         "decision_trace": stage2_trace,
         "order_type": NO_ORDER,
@@ -527,14 +530,20 @@ def decide(
     band: float = GZ.BAND,
     vote: int = 0,
     anchor: Any | None = None,
+    stance: str | None = None,
 ) -> DecisionOutcome:
     """执行一次完整决策。
 
     - `vote`>1 时对灰区 prompt 做自一致性投票（T3.3），默认 0＝单次调用；
     - `anchor`（`records.history.AnchorContext`）只进灰区 prompt 与记录，
-      绝不影响周期/方向/闸门/价格；无灰区时仍然零调用。
+      绝不影响周期/方向/闸门/价格；无灰区时仍然零调用；
+    - `stance` 为下单倾向档位（见 `engine/stance.py`），只驱动 §10 的最低 RR
+      与方程余量，不改变周期/方向/AlwaysIn/入场路径。`None` 时沿用 `ctx`
+      中已注入的档位，否则回落到 `Stance.DEFAULT`（均衡）。
     """
     ctx = ctx or GateContext()
+    policy = apply_stance(ctx, stance) if stance is not None else stance_of(ctx)
+    ctx.extras["stance"] = policy
     anchor_prompt, anchor_record = _anchor_dicts(anchor)
     if anchor_record is not None:
         ctx.extras["anchor"] = anchor_record
@@ -551,6 +560,7 @@ def decide(
     if bars:
         prefill, meta = _prefill_results(frame, ctx)
         results.extend(prefill)
+    meta["stance"] = policy.name
 
     if len(bars) < Prefill.BAR_COUNT_MIN:
         results.append(
@@ -570,6 +580,7 @@ def decide(
             gate_result="unknown",
             results=results,
             reason=f"数据不足：{len(bars)} 根 < {Prefill.BAR_COUNT_MIN} 根，等待更多已收盘K线",
+            stance=policy.as_record(),
         )
         decision["terminal"] = {"node_id": "1.1", "outcome": "unknown", "label": "数据不足"}
         return DecisionOutcome(
@@ -721,6 +732,7 @@ def decide(
         patterns=patterns,
         reversal=reversal_info,
         wedge=wedge_info,
+        stance=policy.as_record(),
     )
     decision.update(
         {

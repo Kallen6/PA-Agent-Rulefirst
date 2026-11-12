@@ -10,10 +10,11 @@ from tests.support import build_v2_frame
 
 
 def _decide(regime: str, setup: bool = False):
+    """固定 aggressive 档：本文件验证路径判定，需保持原始 RR≥1.0 口径。"""
     from tests.fixtures.synthetic import make_setup_rows
 
     rows = make_setup_rows(regime) if setup else make_regime_rows(regime)
-    return decide(build_v2_frame(rows))
+    return decide(build_v2_frame(rows), stance="aggressive")
 
 
 def test_background_limit_path_is_a_real_second_entry_route() -> None:

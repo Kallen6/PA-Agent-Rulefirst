@@ -9,6 +9,7 @@
 - **端到端决策**：输入 K 线，输出周期定位、方向、在场方向（AlwaysIn）、诊断置信度、入场价/止损/TP1/TP2、委托方式与完整决策轨迹；
 - **双入场路径**：信号棒合格走信号棒路径（突破单/限价单），不合格走背景驱动限价（结构位方案），两条路径都失败才终止；
 - **灰区机制**：置信度带宽检测触发感知层，支持自一致性投票（N 次取多数）与增量锚定（读上次记录作参考，不改判代码结论）；
+- **下单倾向档位**：保守/均衡/激进/极度激进四档，以代码阈值（最低 RR、方程余量）落地，不写提示词、不改周期与方向；
 - **全链路可追溯**：每个闸门节点记录答案/分支/置信度/证据/来源（代码或模型），可导出为单文件 HTML 报告（内嵌 K 线图，离线可看）；
 - **度量与标定**：合成/真实行情灰区比例、prompt 体积、基线测量、灰区带宽标定、灰区样本标注与审计闭环；
 - **零第三方依赖**：只用 Python 3.11+ 标准库（dataclasses/json/pathlib/re/argparse/math/urllib），不装任何包即可运行。
@@ -33,10 +34,28 @@ python run.py --live                           # 真实币安 K 线端到端决�
 python run.py --live --no-save                 # 只看决策、不落盘
 python run.py --live --incremental             # 读取上次同品种记录作为灰区锚点
 python run.py --live --vote 3                  # 灰区自一致性投票（3 次取多数）
+python run.py --live --stance conservative      # 指定下单倾向档位（默认读 settings.json）
 python run.py --regime tight_channel --setup   # 合成行情端到端决策
 python run.py --regime broad_channel --llm     # 灰区 + 离线 MockLLM
 python run.py --regime broad_channel --llm http  # 灰区 + 真实 API（读 config/settings.json）
 ```
+
+### 下单倾向档位
+
+v1 的四档写在 Stage-2 提示词里，数值阈值不变；v2 改为阈值向量，只驱动 §10 的两个门槛，
+周期、方向、AlwaysIn、入场路径与下单方式路由完全不受影响。
+
+| 档位 | 配置值 | 最低 RR | 方程余量下限 | 外扩目标 RR |
+|---|---|---|---|---|
+| 保守 | `conservative` | 1.50 | +15% | 1.55 |
+| 均衡（默认） | `balanced` | 1.20 | +5% | 1.25 |
+| 激进 | `aggressive` | 1.00 | 0% | 1.05 |
+| 极度激进 | `extreme_aggressive` | 1.00 | −5% | 1.05 |
+
+要点：`target_rr`（止损外扩目标）必须略高于 `min_rr`，否则外扩会把 RR 压回目标值后被自己的门槛判死；
+极度激进档允许轻微负期望，但仍受 §10.2 止损过滤与 §14 硬禁令约束，不会强制产出订单。
+配置入口：`config/settings.json` 的 `engine.decision_stance`；临时覆盖用 `--stance`，
+Web 决策台在「引擎参数 → 下单倾向」中可实时切换。
 
 ### 测试
 
@@ -105,7 +124,8 @@ K 线输入（币安 / 合成 / 历史缓存）
 - 两条入场路径都失败才终止；§14 任一禁令触发即不下单；
 - 感知层只出证据与胜率覆写，**不推翻**代码得出的周期、方向与闸门结论；
 - 增量锚定（`--incremental`）只进灰区 prompt 与记录，不改变判定；
-- 阈值、灰区带宽、prompt 预算的唯一来源是 `pa_engine/config/thresholds.py`，不进 JSON。
+- 下单倾向档位只改 §10 的 RR / 方程门槛，在任何闸门之前注入 `GateContext`，不改变阶段一结论；
+- 阈值、档位参数、灰区带宽、prompt 预算的唯一来源是 `pa_engine/config/thresholds.py`，不进 JSON。
 
 ### 目录结构
 
@@ -123,7 +143,7 @@ pa_engine/
 ├── features/              # 指标/单根K线几何/波段结构/区间与突破事件
 ├── prefill/               # 方向 / AlwaysIn / 三窗口先验
 ├── gates/                 # §1–§14 二元判定闸门（结构/尖峰/反转/楔形/区间/入场/风险/下单/守卫）
-├── engine/                # 流水线 pipeline.decide、灰区检测、trace、自一致性投票
+├── engine/                # 流水线 pipeline.decide、下单倾向档位 stance、灰区检测、trace、自一致性投票
 ├── ai/                    # 感知层客户端（HTTP/Mock）、prompt 组装、输出契约校验
 ├── records/               # 决策记录落盘、历史检索与增量锚定、灰区样本库、审计
 └── adapters/              # 历史记录适配（测试与回放用）
@@ -141,6 +161,7 @@ records/                   # 运行产物（自动创建，gitignore）
 | `data.api_key` / `data.api_secret` | 仅私有接口需要，公共 K 线留空 |
 | `engine.llm_enabled` | 是否允许真实网络调用（默认 false，纯代码决策） |
 | `engine.llm_timeout_seconds` / `llm_temperature` | 感知层超时与温度 |
+| `engine.decision_stance` | 下单倾向档位（默认 `balanced`；CLI `--stance` / Web 可临时覆盖） |
 | `provider.model` / `provider.base_url` / `provider.api_key` | 感知层（OpenAI 兼容接口） |
 | `records.dir` | 记录、灰区样本、审计报告根目录（默认 `records`） |
 | `notify.*` | PushPlus / 飞书通知（未接线） |

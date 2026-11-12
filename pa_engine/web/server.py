@@ -68,6 +68,9 @@ def _build_opener(proxy: str | None):
 
 def _decide_kwargs(payload: dict[str, Any]) -> dict[str, Any]:
     """payload → decide() 关键字参数；band 未提供时不覆盖默认灰区带宽。"""
+    from pa_engine.config.thresholds import Stance
+    from pa_engine.engine.stance import is_valid_stance, normalize_stance
+
     kwargs: dict[str, Any] = {
         "llm": _make_llm(str(payload.get("llm") or "")),
         "vote": int(payload.get("vote") or 0),
@@ -78,6 +81,18 @@ def _decide_kwargs(payload: dict[str, Any]) -> dict[str, Any]:
         if not 0 < value <= 0.5:
             raise ValueError(f"灰区带宽超出合理范围（0,0.5]：{value}")
         kwargs["band"] = value
+
+    raw_stance = payload.get("stance")
+    if raw_stance is None or str(raw_stance).strip() == "":
+        from pa_engine.config.settings import load_settings
+
+        kwargs["stance"] = load_settings().engine.decision_stance
+    else:
+        if not is_valid_stance(raw_stance):
+            raise ValueError(
+                f"未知下单倾向档位：{raw_stance}；可选：{', '.join(Stance.ORDER)}"
+            )
+        kwargs["stance"] = normalize_stance(raw_stance)
     return kwargs
 
 
@@ -165,6 +180,7 @@ def _summary(frame: Any, outcome: DecisionOutcome, source: str) -> dict[str, Any
         "direction": decision.get("direction"),
         "terminal": decision.get("terminal") or {},
         "order_type": decision.get("order_type"),
+        "stance": decision.get("stance") or {},
         "llm_called": outcome.llm_called,
     }
 

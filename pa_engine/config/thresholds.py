@@ -8,6 +8,8 @@
 """
 from __future__ import annotations
 
+from types import MappingProxyType
+
 
 class Bar:
     """单根 K 线几何判定（对应 v1 kline_features.py）。"""
@@ -183,7 +185,8 @@ class Risk:
     STOP_FILTER_CHANNEL_WIDTH = 0.40    # > 通道宽度 40% → 放弃
     STOP_FILTER_RANGE_WIDTH = 0.10      # > 区间宽度 10% → 放弃
     STOP_FILTER_ATR_MULT = 2.0          # > 2×ATR → 放弃
-    MIN_RR = 1.0                        # RR <1.0 且无法修正 → reject
+    MIN_RR = 1.0                        # 兜底下限：未注入档位时使用
+    MAX_TP1_RISK_REWARD_RATIO = 1.0     # 兜底外扩目标：未注入档位时使用
     WIDEN_STOP_MAX_SPIKE_FRACTION = 0.5  # 外扩止损上限 = 尖峰高度 50%
     # 纯代码路径的保守胜率先验（C 类判断的缺省值；灰区由 LLM 覆盖）
     WIN_RATE_PRIOR: dict[str, float] = {
@@ -197,6 +200,57 @@ class Risk:
         "extreme_tr": 0.50,
         "unknown": 0.50,
     }
+
+
+class Stance:
+    """下单倾向档位（v2 新增：把 v1 的 prompt 文案档位改为阈值向量）。
+
+    v1 的四档写在 Stage-2 提示词里（40–60 行文案），数值阈值一律不变；
+    v2 只保留能真正驱动代码的两项门槛，档位不再向 prompt 注入任何文本：
+
+    - ``min_rr``：§10.2 / §10.3 的最低盈亏比；
+    - ``min_equation_gap``：§10.3 交易者方程的相对余量下限，
+      定义 ``(胜率×回报 − 败率×风险) / (败率×风险)``，负数表示允许轻微负期望；
+    - ``target_rr``：``prepare_plan()`` 外扩止损的目标 RR。
+
+    为什么 ``target_rr`` 必须与 ``min_rr`` 成对：外扩止损会把 RR 压到目标值，
+    若目标仍固定为 1.0，保守档的 ``min_rr=1.5`` 会让所有方案被 §10.2 判死。
+    取 ``min_rr + 0.05`` 是为了留出浮点余量。
+
+    档位只改执行门槛，不改变周期、方向、Always In、入场路径与下单方式路由。
+    """
+
+    DEFAULT = "balanced"
+    ORDER: tuple[str, ...] = (
+        "conservative",
+        "balanced",
+        "aggressive",
+        "extreme_aggressive",
+    )
+    LABELS_ZH = MappingProxyType(
+        {
+            "conservative": "保守",
+            "balanced": "均衡",
+            "aggressive": "激进",
+            "extreme_aggressive": "极度激进",
+        }
+    )
+    PARAMS = MappingProxyType(
+        {
+            "conservative": MappingProxyType(
+                {"min_rr": 1.50, "min_equation_gap": 0.15, "target_rr": 1.55}
+            ),
+            "balanced": MappingProxyType(
+                {"min_rr": 1.20, "min_equation_gap": 0.05, "target_rr": 1.25}
+            ),
+            "aggressive": MappingProxyType(
+                {"min_rr": 1.00, "min_equation_gap": 0.00, "target_rr": 1.05}
+            ),
+            "extreme_aggressive": MappingProxyType(
+                {"min_rr": 1.00, "min_equation_gap": -0.05, "target_rr": 1.05}
+            ),
+        }
+    )
 
 
 class GrayZone:

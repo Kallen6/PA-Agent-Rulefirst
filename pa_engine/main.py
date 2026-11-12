@@ -8,6 +8,8 @@
     python run.py --live --incremental    读取上次记录作为灰区锚点
     python run.py --live --vote 3         灰区自一致性投票（3 次取多数）
     python run.py --regime spike --llm    灰区使用离线 Mock（不联网）
+    python run.py --regime broad_channel --stance conservative
+                                          指定下单倾向档位（默认读 settings.json）
 """
 from __future__ import annotations
 
@@ -15,6 +17,7 @@ import argparse
 import json
 from dataclasses import dataclass
 
+from pa_engine.config.thresholds import Stance
 from pa_engine.engine.pipeline import decide
 from pa_engine.gates.base import GATES, GateContext, run_all
 
@@ -60,6 +63,7 @@ def _cmd_check_config() -> int:
         f"key={'已配置' if settings.provider.api_key else '未配置'}  "
         f"model={settings.provider.model}"
     )
+    print(f"下单倾向: {settings.engine.decision_stance}（只改 §10 执行门槛）")
     issues = validate_settings(settings)
     if issues:
         print("配置检查未通过：")
@@ -117,6 +121,12 @@ def _print_outcome(outcome, as_json: bool) -> int:
     if decision.get("estimated_win_rate"):
         print(f"  估算胜率: {decision['estimated_win_rate']:.0f}%")
     print(f"原因: {decision['reason']}")
+    stance = decision.get("stance") or {}
+    if isinstance(stance, dict) and stance.get("label_zh"):
+        print(
+            f"下单倾向: {stance['label_zh']}（RR≥{stance.get('min_rr')}，"
+            f"方程余量≥{stance.get('min_equation_gap')}）"
+        )
     print(f"灰区: need_llm={outcome.gray_zone.need_llm} 调用={outcome.llm_called} "
           f"prompt={outcome.prompt_stats.get('bytes', 0)}B")
     ballot = decision.get("vote")
@@ -164,13 +174,16 @@ def _cmd_regime(
     vote: int = 0,
     save: bool = False,
     records_dir=None,
+    stance: str | None = None,
 ) -> int:
+    from pa_engine.config.settings import load_settings
     from tests.fixtures.synthetic import make_regime_rows, make_setup_rows
     from tests.support import build_v2_frame
 
+    stance = stance or load_settings().engine.decision_stance
     rows = make_setup_rows(kind) if setup else make_regime_rows(kind)
     frame = build_v2_frame(rows)
-    outcome = decide(frame, llm=_make_llm(llm_mode), vote=vote)
+    outcome = decide(frame, llm=_make_llm(llm_mode), vote=vote, stance=stance)
     code = _print_outcome(outcome, as_json)
     if save:
         newest = frame.bars[0] if frame.bars else None
@@ -199,12 +212,15 @@ def _cmd_live(
     save: bool = True,
     records_dir=None,
     incremental: bool = False,
+    stance: str | None = None,
 ) -> int:
     """真实行情：按 config/settings.json 的 data.* 抓币安 K 线后跑决策。"""
     from pa_engine.config.settings import load_settings
     from pa_engine.data.binance import KlineFetchError, load_binance_frame
 
-    data = load_settings().data
+    settings = load_settings()
+    data = settings.data
+    stance = stance or settings.engine.decision_stance
     try:
         frame = load_binance_frame(data)
     except KlineFetchError as exc:
@@ -229,7 +245,9 @@ def _cmd_live(
         if anchor is None:
             print("增量: 无可用上次记录或没有新增已收盘K线，本次按全量分析")
 
-    outcome = decide(frame, llm=_make_llm(llm_mode), vote=vote, anchor=anchor)
+    outcome = decide(
+        frame, llm=_make_llm(llm_mode), vote=vote, anchor=anchor, stance=stance
+    )
     code = _print_outcome(outcome, as_json)
     if save:
         _save_outcome(
@@ -262,6 +280,15 @@ def main(argv: list[str] | None = None) -> int:
         help="灰区感知层：mock=离线替身（默认）；http=按 config/settings.json 调用真实 API",
     )
     parser.add_argument("--json", action="store_true", help="输出完整决策 JSON")
+    parser.add_argument(
+        "--stance",
+        choices=Stance.ORDER,
+        default=None,
+        help=(
+            "下单倾向档位：conservative/balanced/aggressive/extreme_aggressive"
+            "（默认读 config/settings.json 的 engine.decision_stance）"
+        ),
+    )
     parser.add_argument(
         "--vote",
         type=int,
@@ -326,6 +353,7 @@ def main(argv: list[str] | None = None) -> int:
             save=True if args.save is None else args.save,
             records_dir=args.records_dir,
             incremental=args.incremental,
+            stance=args.stance,
         )
     if args.regime:
         return _cmd_regime(
@@ -336,6 +364,7 @@ def main(argv: list[str] | None = None) -> int:
             vote=max(0, args.vote),
             save=bool(args.save),
             records_dir=args.records_dir,
+            stance=args.stance,
         )
     parser.print_help()
     return 0

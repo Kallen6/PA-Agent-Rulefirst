@@ -106,6 +106,15 @@
           </select>
         </label>
         <label class="field">
+          <span class="field-label">下单倾向 <em id="stance-value" class="field-hint">均衡 · RR≥1.2 / 方程≥+5%</em></span>
+          <select id="stance">
+            <option value="conservative">保守（更少下单，RR≥1.5）</option>
+            <option value="balanced" selected>均衡（默认，RR≥1.2）</option>
+            <option value="aggressive">激进（RR≥1.0）</option>
+            <option value="extreme_aggressive">极度激进（允许轻微负期望）</option>
+          </select>
+        </label>
+        <label class="field">
           <span class="field-label">自一致性投票 <em id="vote-value" class="field-hint">关闭</em></span>
           <input type="range" id="vote" min="0" max="5" step="1" value="0">
         </label>

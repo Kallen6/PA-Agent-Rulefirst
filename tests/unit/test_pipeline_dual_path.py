@@ -1,4 +1,9 @@
-"""双路径流水线与 LLM 覆盖单测。"""
+"""双路径流水线与 LLM 覆盖单测。
+
+档位说明：本文件验证的是入场路径与 LLM 覆盖语义，沿用原始 RR≥1.0 /
+方程余量≥0 的口径，因此显式使用 `aggressive` 档；四档差异见
+`test_stance_*.py`。
+"""
 from __future__ import annotations
 
 from pa_engine.ai.client import MockLLM
@@ -7,9 +12,9 @@ from tests.fixtures.synthetic import make_regime_rows, make_setup_rows
 from tests.support import build_v2_frame
 
 
-def _decide(regime: str, setup: bool = False, llm=None, band=None):
+def _decide(regime: str, setup: bool = False, llm=None, band=None, stance: str = "aggressive"):
     rows = make_setup_rows(regime) if setup else make_regime_rows(regime)
-    kwargs = {"llm": llm} if llm is not None else {}
+    kwargs = {"llm": llm, "stance": stance} if llm is not None else {"stance": stance}
     if band is not None:
         kwargs["band"] = band
     return decide(build_v2_frame(rows), **kwargs)

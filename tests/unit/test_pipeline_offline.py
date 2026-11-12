@@ -107,7 +107,7 @@ class _BrokenLLM:
 
 def test_llm_failure_does_not_break_pipeline() -> None:
     frame = _frame("broad_channel")
-    outcome = decide(frame, llm=_BrokenLLM())
+    outcome = decide(frame, llm=_BrokenLLM(), stance="aggressive")
     decision = outcome.decision
     assert outcome.gray_zone.need_llm is True
     assert outcome.llm_called is False

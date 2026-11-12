@@ -453,6 +453,19 @@ def _badge(decision: dict[str, Any]) -> str:
     return f'<span class="badge badge-{html.escape(outcome, quote=True)}">{html.escape(label)}</span>'
 
 
+def _stance_text(decision: dict[str, Any]) -> str:
+    """档位卡片：显示中文名与生效的 RR 门槛。"""
+    stance = decision.get("stance") or {}
+    if not isinstance(stance, dict) or not stance.get("label_zh"):
+        return ""
+    min_rr = stance.get("min_rr")
+    min_gap = stance.get("min_equation_gap")
+    rr_text = f"RR≥{min_rr:.1f}" if isinstance(min_rr, (int, float)) else ""
+    gap_text = f"方程≥{min_gap:+.0%}" if isinstance(min_gap, (int, float)) else ""
+    detail = " / ".join(part for part in (rr_text, gap_text) if part)
+    return f"{stance['label_zh']}（{detail}）" if detail else str(stance["label_zh"])
+
+
 def _cards(frame: Any, outcome: DecisionOutcome) -> str:
     decision = outcome.decision
     stage1 = outcome.stage1 or {}
@@ -463,6 +476,7 @@ def _cards(frame: Any, outcome: DecisionOutcome) -> str:
             break
     items = [
         ("周期定位", decision.get("cycle_position")),
+        ("下单倾向", _stance_text(decision)),
         ("方向", decision.get("direction")),
         ("在场方向", decision.get("always_in")),
         ("诊断置信", _pct(decision.get("diagnosis_confidence"))),

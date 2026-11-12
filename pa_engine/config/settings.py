@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from pa_engine.config.paths import SETTINGS_JSON_PATH
+from pa_engine.config.thresholds import Stance
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -99,6 +100,19 @@ class ProviderSettings:
         return bool(self.api_key and self.base_url)
 
 
+def _normalize_stance_name(value: Any) -> str:
+    """配置容错：接受英文档位名或中文标签，其余一律回落默认档。"""
+    text = str(value or "").strip()
+    if not text:
+        return Stance.DEFAULT
+    if text in Stance.ORDER:
+        return text
+    for name, label in Stance.LABELS_ZH.items():
+        if text == label:
+            return name
+    return Stance.DEFAULT
+
+
 @dataclass(frozen=True)
 class EngineSettings:
     """v2 引擎开关。阈值仍以 `thresholds.py` 为唯一来源。"""
@@ -106,6 +120,8 @@ class EngineSettings:
     llm_enabled: bool = False
     llm_timeout_seconds: int = 60
     llm_temperature: float = 0.0
+    #: 下单倾向档位：conservative / balanced / aggressive / extreme_aggressive
+    decision_stance: str = Stance.DEFAULT
 
     @classmethod
     def from_dict(cls, raw: Mapping[str, Any] | None) -> "EngineSettings":
@@ -116,6 +132,9 @@ class EngineSettings:
                 data.get("llm_timeout_seconds"), cls.llm_timeout_seconds
             ),
             llm_temperature=_as_float(data.get("llm_temperature"), cls.llm_temperature),
+            decision_stance=_normalize_stance_name(
+                data.get("decision_stance", cls.decision_stance)
+            ),
         )
 
 
@@ -312,6 +331,12 @@ def validate_settings(settings: Settings) -> list[str]:
             issues.append("provider.base_url 未配置（engine.llm_enabled=true 时必填）")
         if not settings.provider.api_key:
             issues.append("provider.api_key 未配置（engine.llm_enabled=true 时必填）")
+
+    if settings.engine.decision_stance not in Stance.ORDER:
+        issues.append(
+            f"engine.decision_stance={settings.engine.decision_stance!r} 非法，"
+            f"可选：{', '.join(Stance.ORDER)}"
+        )
 
     return issues
 

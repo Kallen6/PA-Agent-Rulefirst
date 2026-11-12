@@ -50,7 +50,12 @@ def test_legibility_confused_revokes_plan() -> None:
     from tests.support import build_v2_frame
 
     llm = MockLLM({"market_legibility": "confused"})
-    outcome = decide(build_v2_frame(make_regime_rows("broad_channel")), llm=llm, band=1.0)
+    outcome = decide(
+        build_v2_frame(make_regime_rows("broad_channel")),
+        llm=llm,
+        band=1.0,
+        stance="aggressive",
+    )
     decision = outcome.decision
     assert outcome.llm_called is True
     assert decision["order_type"] == "不下单"
@@ -68,6 +73,11 @@ def test_legibility_clear_keeps_plan() -> None:
     from tests.support import build_v2_frame
 
     llm = MockLLM({"market_legibility": "clear"})
-    decision = decide(build_v2_frame(make_regime_rows("broad_channel")), llm=llm, band=1.0).decision
+    decision = decide(
+        build_v2_frame(make_regime_rows("broad_channel")),
+        llm=llm,
+        band=1.0,
+        stance="aggressive",
+    ).decision
     assert decision["terminal"]["outcome"] == "trade"
     assert decision["entry_price"] is not None
