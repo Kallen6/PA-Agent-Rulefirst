@@ -44,7 +44,9 @@ def test_both_entry_paths_failing_waits() -> None:
     assert decision["order_type"] == "不下单"
     assert decision["terminal"]["node_id"] == "9.0P"
     nodes = {r["node_id"]: r for r in decision["decision_trace"]}
-    assert nodes["9.0"]["answer"] == "否"
+    # 激进档（pass=2）把边界信号棒判为合格 → 信号路径被 §9.2 否决后
+    # 回退 §9.0P（P0 配套），回退也失败 → 终态记 9.0P 的失败原因
+    assert nodes["9.0"]["answer"] == "是"
     assert nodes["9.0P"]["answer"] == "否"
 
 

@@ -111,3 +111,27 @@ def test_widen_default_keeps_legacy_target() -> None:
     widened, evidence = widen_stop_for_rr_cap(plan)
     assert abs(risk_reward(widened) - 1.0) < 1e-6
     assert evidence["target_rr"] == 1.0
+
+
+def test_min_win_rate_blocks_borderline_equation_winner() -> None:
+    """P1：方程通过但胜率低于档位下限 → §10.3 拒；极度激进放行同一方案。
+
+    构造：RR=1.25（均衡档 target，不外扩）、胜率 49%：
+    方程余量 (49×0.525 − 51×0.5)/(51×0.5) ≈ +1% → 通过；
+    均衡档 min_win_rate=50 → low_win_rate 拒。
+    极度激进档外扩到 RR=1.05 后方程 +0.9%（≥ −5%）、胜率 49（≥ 30）→ 通过。
+    """
+    plan = _plan(stop=99.6, tp1=100.525, estimated_win_rate=49.0)
+    balanced = _run_risk(plan, "balanced", "10.3")
+    extreme = _run_risk(plan, "extreme_aggressive", "10.3")
+    assert balanced.answer is False and balanced.branch == "low_win_rate"
+    assert balanced.evidence["min_win_rate"] == 50.0
+    assert extreme.answer is True and extreme.branch == "passed"
+    assert extreme.evidence["min_win_rate"] == 30.0
+
+
+def test_win_rate_floor_priority_after_equation() -> None:
+    """分支优先级：RR 不足 → rr_below_1；方程不足 → equation_failed；胜率不足才 low_win_rate。"""
+    plan = _plan(stop=99.6, tp1=100.525, estimated_win_rate=40.0)  # 方程负余量 + 胜率 40
+    result = _run_risk(plan, "balanced", "10.3")
+    assert result.branch == "equation_failed"  # 方程先于胜率下限拦截

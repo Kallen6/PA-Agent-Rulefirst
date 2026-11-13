@@ -206,18 +206,31 @@ class Stance:
     """下单倾向档位（v2 新增：把 v1 的 prompt 文案档位改为阈值向量）。
 
     v1 的四档写在 Stage-2 提示词里（40–60 行文案），数值阈值一律不变；
-    v2 只保留能真正驱动代码的两项门槛，档位不再向 prompt 注入任何文本：
+    v2 全部代码化，档位不再向 prompt 注入任何文本：
 
     - ``min_rr``：§10.2 / §10.3 的最低盈亏比；
     - ``min_equation_gap``：§10.3 交易者方程的相对余量下限，
       定义 ``(胜率×回报 − 败率×风险) / (败率×风险)``，负数表示允许轻微负期望；
-    - ``target_rr``：``prepare_plan()`` 外扩止损的目标 RR。
+    - ``target_rr``：``prepare_plan()`` 外扩止损的目标 RR；
+    - ``min_win_rate``：§10.3 的独立胜率下限（百分数）。与方程不重复：
+      方程只要求期望为正（低胜率高赔付可通过），该下限控制
+      「接受多低胜率的赌单」，是 v1 trade_confidence 门槛的代码化；
+    - ``signal_pass_score`` / ``signal_fail_score``：§9.0 信号棒打分的
+      合格/不合格门槛（0–4 分）。激进档把 borderline 判为合格，
+      相当于 v1 的「接受更早、更不完美的入场触发」；
+    - ``bg_limit_min_mult`` / ``bg_limit_max_mult``：§9.0P 背景限价的
+      距离区间乘数（×``Entry.BACKGROUND_LIMIT_MIN/MAX_ATR``）。
+      保守档收窄（结构位须更标准），激进档放宽（接受更远/更近的结构位）；
+    - ``fallback_to_bg_limit``：§9.0 信号路径被 §9.2/§9.5 等阻断时，
+      是否回退评估 §9.0P 背景限价（v1 激进条款「突破单不可行时尝试限价单」
+      的最小代码化）。保守/均衡不回退，保持原有路径顺序语义。
 
     为什么 ``target_rr`` 必须与 ``min_rr`` 成对：外扩止损会把 RR 压到目标值，
     若目标仍固定为 1.0，保守档的 ``min_rr=1.5`` 会让所有方案被 §10.2 判死。
     取 ``min_rr + 0.05`` 是为了留出浮点余量。
 
-    档位只改执行门槛，不改变周期、方向、Always In、入场路径与下单方式路由。
+    档位只改执行门槛，不改变周期、方向、Always In 的判定与下单方式路由表
+    （§9 路径选择与 §9.0P 硬禁令仍由结构决定，档位只放宽打分与距离边界）。
     """
 
     DEFAULT = "balanced"
@@ -238,16 +251,56 @@ class Stance:
     PARAMS = MappingProxyType(
         {
             "conservative": MappingProxyType(
-                {"min_rr": 1.50, "min_equation_gap": 0.15, "target_rr": 1.55}
+                {
+                    "min_rr": 1.50,
+                    "min_equation_gap": 0.15,
+                    "target_rr": 1.55,
+                    "min_win_rate": 55.0,
+                    "signal_pass_score": 4,
+                    "signal_fail_score": 2,
+                    "bg_limit_min_mult": 1.25,
+                    "bg_limit_max_mult": 0.75,
+                    "fallback_to_bg_limit": False,
+                }
             ),
             "balanced": MappingProxyType(
-                {"min_rr": 1.20, "min_equation_gap": 0.05, "target_rr": 1.25}
+                {
+                    "min_rr": 1.20,
+                    "min_equation_gap": 0.05,
+                    "target_rr": 1.25,
+                    "min_win_rate": 50.0,
+                    "signal_pass_score": 3,
+                    "signal_fail_score": 1,
+                    "bg_limit_min_mult": 1.0,
+                    "bg_limit_max_mult": 1.0,
+                    "fallback_to_bg_limit": False,
+                }
             ),
             "aggressive": MappingProxyType(
-                {"min_rr": 1.00, "min_equation_gap": 0.00, "target_rr": 1.05}
+                {
+                    "min_rr": 1.00,
+                    "min_equation_gap": 0.00,
+                    "target_rr": 1.05,
+                    "min_win_rate": 40.0,
+                    "signal_pass_score": 2,
+                    "signal_fail_score": 1,
+                    "bg_limit_min_mult": 0.75,
+                    "bg_limit_max_mult": 1.25,
+                    "fallback_to_bg_limit": True,
+                }
             ),
             "extreme_aggressive": MappingProxyType(
-                {"min_rr": 1.00, "min_equation_gap": -0.05, "target_rr": 1.05}
+                {
+                    "min_rr": 1.00,
+                    "min_equation_gap": -0.05,
+                    "target_rr": 1.05,
+                    "min_win_rate": 30.0,
+                    "signal_pass_score": 2,
+                    "signal_fail_score": 0,
+                    "bg_limit_min_mult": 0.50,
+                    "bg_limit_max_mult": 1.50,
+                    "fallback_to_bg_limit": True,
+                }
             ),
         }
     )

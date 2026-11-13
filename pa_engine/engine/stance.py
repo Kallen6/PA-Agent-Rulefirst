@@ -47,6 +47,18 @@ class StancePolicy:
     min_rr: float
     min_equation_gap: float
     target_rr: float
+    #: §10.3 独立胜率下限（百分数，0–100）；方程之外的「低胜率赌单」防线
+    min_win_rate: float = 50.0
+    #: §9.0 信号棒打分合格线（0–4）：激进档把 borderline 判为合格
+    signal_pass_score: int = 3
+    #: §9.0 信号棒打分不合格线（0–4）：极度激进把 1 分降级为灰区而非直接否
+    signal_fail_score: int = 1
+    #: §9.0P 距离下限乘数（×Entry.BACKGROUND_LIMIT_MIN_ATR）
+    bg_limit_min_mult: float = 1.0
+    #: §9.0P 距离上限乘数（×Entry.BACKGROUND_LIMIT_MAX_ATR）
+    bg_limit_max_mult: float = 1.0
+    #: 信号路径被 §9.2/§9.5 阻断时是否回退评估 §9.0P（仅激进档启用）
+    fallback_to_bg_limit: bool = False
 
     def as_record(self) -> dict[str, Any]:
         """记录用快照：回放时据此确认「当时用的是哪一档、门槛是多少」。"""
@@ -56,6 +68,12 @@ class StancePolicy:
             "min_rr": self.min_rr,
             "min_equation_gap": self.min_equation_gap,
             "target_rr": self.target_rr,
+            "min_win_rate": self.min_win_rate,
+            "signal_pass_score": self.signal_pass_score,
+            "signal_fail_score": self.signal_fail_score,
+            "bg_limit_min_mult": self.bg_limit_min_mult,
+            "bg_limit_max_mult": self.bg_limit_max_mult,
+            "fallback_to_bg_limit": self.fallback_to_bg_limit,
         }
 
 
@@ -83,6 +101,12 @@ def policy_of(name: str) -> StancePolicy:
         min_rr=float(params["min_rr"]),
         min_equation_gap=float(params["min_equation_gap"]),
         target_rr=float(params["target_rr"]),
+        min_win_rate=float(params["min_win_rate"]),
+        signal_pass_score=int(params["signal_pass_score"]),
+        signal_fail_score=int(params["signal_fail_score"]),
+        bg_limit_min_mult=float(params["bg_limit_min_mult"]),
+        bg_limit_max_mult=float(params["bg_limit_max_mult"]),
+        fallback_to_bg_limit=bool(params["fallback_to_bg_limit"]),
     )
 
 

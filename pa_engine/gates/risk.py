@@ -297,11 +297,16 @@ def gate_10_3(frame: FrameLike, ctx: GateContext) -> GateResult:
     gap = (left - right) / right if right > 0 else 1.0
     rr_ok = rr >= policy.min_rr - 1e-9
     gap_ok = gap >= policy.min_equation_gap - 1e-9
-    answer = rr_ok and gap_ok
+    # 独立胜率下限（v1 trade_confidence 门槛的代码化）：方程允许低胜率高赔付，
+    # 该下限按档位控制「接受多低胜率的赌单」，是比方程更早的执行层信心闸门。
+    win_ok = win >= policy.min_win_rate - 1e-9
+    answer = rr_ok and gap_ok and win_ok
     if not rr_ok:
         branch = "rr_below_1"
     elif not gap_ok:
         branch = "equation_failed"
+    elif not win_ok:
+        branch = "low_win_rate"
     else:
         branch = "passed"
     conf = 0.6 if abs(gap) < 0.05 else 0.95
@@ -321,6 +326,7 @@ def gate_10_3(frame: FrameLike, ctx: GateContext) -> GateResult:
             "min_rr": policy.min_rr,
             "equation_gap": round(gap, 4),
             "min_equation_gap": policy.min_equation_gap,
+            "min_win_rate": policy.min_win_rate,
             "stance": policy.name,
             "estimated_win_rate": win,
             "equation_left": round(left, 6),
@@ -329,7 +335,7 @@ def gate_10_3(frame: FrameLike, ctx: GateContext) -> GateResult:
             "stop_widen": ctx.extras.get("stop_widen", {}),
         },
         reason=(
-            f"RR={rr:.2f}（≥{policy.min_rr:g}）、胜率{win:.0f}%："
+            f"RR={rr:.2f}（≥{policy.min_rr:g}）、胜率{win:.0f}%（下限{policy.min_win_rate:g}%）："
             f"{win:.0f}%×{reward:.4g}={left:.4g} "
             f"{'>' if equation_ok else '≤'} {(100 - win):.0f}%×{risk:.4g}={right:.4g}；"
             f"方程余量{gap:+.1%}（{policy.label_zh}档下限{policy.min_equation_gap:+.0%}）"

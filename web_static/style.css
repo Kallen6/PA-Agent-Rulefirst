@@ -137,6 +137,35 @@ input[type="range"] {
   width: 100%; accent-color: var(--primary-2); cursor: pointer;
 }
 
+/* ── 交易对组合框：聚焦/点击始终展开全部候选，输入时按关键字过滤 ── */
+.combobox { position: relative; }
+.combobox input { padding-right: 30px; }
+.combo-toggle {
+  position: absolute; right: 5px; top: 50%; transform: translateY(-50%);
+  background: transparent; border: 0; color: var(--text-1);
+  font-size: 11px; line-height: 1; padding: 4px 6px; cursor: pointer; border-radius: 6px;
+}
+.combo-toggle:hover { color: var(--text-0); background: rgba(148, 163, 184, 0.12); }
+.combo-list {
+  position: absolute; z-index: 40; top: calc(100% + 4px); left: 0; right: 0;
+  max-height: 260px; overflow-y: auto; margin: 0; padding: 4px; list-style: none;
+  background: rgba(17, 26, 44, 0.97);
+  border: 1px solid var(--glass-border); border-radius: 9px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(10px);
+}
+.combo-list li {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  padding: 6px 9px; border-radius: 6px; cursor: pointer;
+}
+.combo-list li .sym { font-weight: 600; color: var(--text-0); }
+.combo-list li .zh { font-size: 11.5px; color: var(--text-1); white-space: nowrap; }
+.combo-list li:hover, .combo-list li.active {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.35), rgba(14, 165, 233, 0.25));
+}
+.combo-list li.active { box-shadow: inset 0 0 0 1px rgba(14, 165, 233, 0.35); }
+.combo-list .combo-empty { padding: 8px 10px; color: var(--text-1); font-size: 12px; cursor: default; }
+
 /* ── 按钮 ── */
 .btn {
   border: 0; border-radius: 10px; cursor: pointer;

@@ -61,6 +61,28 @@ def test_record_payload_carries_stance_snapshot() -> None:
     assert payload["decision"]["stance"]["name"] == "conservative"
 
 
+def test_trade_confidence_recorded_only_when_trading() -> None:
+    """P1：交易信心＝生效胜率；不下单时为 null，可直接按档位回测。"""
+    frame = build_v2_frame(make_setup_rows("tight_channel"))
+    trade = decide(frame, stance="aggressive").decision
+    if trade["terminal"]["outcome"] == "trade":
+        assert trade["trade_confidence"] is not None
+        assert 0 <= trade["trade_confidence"] <= 100
+        assert trade["trade_confidence"] == round(trade["estimated_win_rate"])
+    wait = decide(build_v2_frame(make_regime_rows("tight_channel")), stance="balanced").decision
+    assert wait["trade_confidence"] is None
+
+
+def test_aggressive_falls_back_to_background_limit() -> None:
+    """P0 配套：激进档信号路径被否决后回退 §9.0P（broad_channel 经典路径）。"""
+    frame = build_v2_frame(make_regime_rows("broad_channel"))
+    decision = decide(frame, stance="aggressive").decision
+    assert decision["entry_style"] == "background_limit"
+    # 均衡档不回退：路径顺序语义不变（score=2 走 borderline → 9.0P 主路径）
+    balanced = decide(frame, stance="balanced").decision
+    assert balanced["entry_style"] in ("background_limit", "none")
+
+
 def test_web_kwargs_validate_stance() -> None:
     from pa_engine.web.server import _decide_kwargs
 

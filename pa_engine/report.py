@@ -454,15 +454,17 @@ def _badge(decision: dict[str, Any]) -> str:
 
 
 def _stance_text(decision: dict[str, Any]) -> str:
-    """档位卡片：显示中文名与生效的 RR 门槛。"""
+    """档位卡片：显示中文名与生效的 RR / 胜率门槛。"""
     stance = decision.get("stance") or {}
     if not isinstance(stance, dict) or not stance.get("label_zh"):
         return ""
     min_rr = stance.get("min_rr")
     min_gap = stance.get("min_equation_gap")
+    min_win = stance.get("min_win_rate")
     rr_text = f"RR≥{min_rr:.1f}" if isinstance(min_rr, (int, float)) else ""
     gap_text = f"方程≥{min_gap:+.0%}" if isinstance(min_gap, (int, float)) else ""
-    detail = " / ".join(part for part in (rr_text, gap_text) if part)
+    win_text = f"胜率≥{min_win:.0f}%" if isinstance(min_win, (int, float)) else ""
+    detail = " / ".join(part for part in (rr_text, gap_text, win_text) if part)
     return f"{stance['label_zh']}（{detail}）" if detail else str(stance["label_zh"])
 
 
@@ -477,6 +479,7 @@ def _cards(frame: Any, outcome: DecisionOutcome) -> str:
     items = [
         ("周期定位", decision.get("cycle_position")),
         ("下单倾向", _stance_text(decision)),
+        ("交易信心", _pct(decision.get("trade_confidence"))),
         ("方向", decision.get("direction")),
         ("在场方向", decision.get("always_in")),
         ("诊断置信", _pct(decision.get("diagnosis_confidence"))),

@@ -53,10 +53,14 @@
           </label>
         </div>
         <div id="live-group" class="hidden">
-          <label class="field">
+          <div class="field">
             <span class="field-label">交易对</span>
-            <input type="text" id="symbol" value="BTCUSDT" placeholder="BTCUSDT">
-          </label>
+            <div class="combobox" id="symbol-combo">
+              <input type="text" id="symbol" value="BTCUSDT" placeholder="BTCUSDT 或中文名" autocomplete="off" spellcheck="false">
+              <button type="button" class="combo-toggle" id="symbol-toggle" aria-label="展开交易对列表">&#9662;</button>
+              <ul class="combo-list hidden" id="symbol-list"></ul>
+            </div>
+          </div>
           <div class="field-row">
             <label class="field">
               <span class="field-label">周期</span>

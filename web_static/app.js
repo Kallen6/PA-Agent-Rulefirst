@@ -53,10 +53,10 @@
 
   /* 档位的生效参数（与 pa_engine/config/thresholds.py 的 Stance.PARAMS 对齐） */
   var STANCE_HINTS = {
-    conservative: "保守 · RR≥1.5 / 方程≥+15%",
-    balanced: "均衡 · RR≥1.2 / 方程≥+5%",
-    aggressive: "激进 · RR≥1.0 / 方程≥0%",
-    extreme_aggressive: "极度激进 · RR≥1.0 / 方程≥-5%",
+    conservative: "保守 · RR≥1.5 / 方程≥+15% / 胜率≥55% / 信号棒 4/4",
+    balanced: "均衡 · RR≥1.2 / 方程≥+5% / 胜率≥50% / 信号棒 3/4",
+    aggressive: "激进 · RR≥1.0 / 方程≥0% / 胜率≥40% / 信号棒 2/4 + 回退限价",
+    extreme_aggressive: "极度激进 · RR≥1.0 / 方程≥-5% / 胜率≥30% / 信号棒 2/4 + 回退限价",
   };
 
   function saveConfig() {
@@ -117,6 +117,101 @@
     $(id).addEventListener("change", saveConfig);
   });
   els.saveToggle.addEventListener("change", saveConfig);
+
+  /* ── 交易对组合框：展开时始终显示全部候选（替代 datalist 的原生过滤行为） ── */
+  var SYMBOLS = [
+    { v: "BTCUSDT", zh: "比特币" },
+    { v: "ETHUSDT", zh: "以太坊" },
+    { v: "BNBUSDT", zh: "币安币" },
+    { v: "SOLUSDT", zh: "Solana" },
+    { v: "XRPUSDT", zh: "瑞波币" },
+    { v: "ADAUSDT", zh: "艾达币" },
+    { v: "DOGEUSDT", zh: "狗狗币" },
+    { v: "LINKUSDT", zh: "Chainlink 链环" },
+    { v: "AVAXUSDT", zh: "Avalanche 雪崩" },
+    { v: "TRXUSDT", zh: "波场 TRON" },
+    { v: "LTCUSDT", zh: "莱特币" },
+    { v: "UNIUSDT", zh: "Uniswap" },
+    { v: "AAVEUSDT", zh: "Aave" },
+    { v: "NEARUSDT", zh: "NEAR" },
+    { v: "SUIUSDT", zh: "Sui" },
+    { v: "ZECUSDT", zh: "Zcash 大零币" },
+    { v: "PEPEUSDT", zh: "Pepe" }
+  ];
+  var symbolInput = $("symbol");
+  var symbolList = $("symbol-list");
+  var symbolToggle = $("symbol-toggle");
+  var symbolActive = -1;
+
+  function symbolCandidates() {
+    var raw = symbolInput.value.trim();
+    var kw = raw.toUpperCase();
+    return SYMBOLS.filter(function (s) {
+      return !kw || s.v.indexOf(kw) >= 0 || s.zh.indexOf(raw) >= 0;
+    });
+  }
+
+  function symbolRender() {
+    var items = symbolCandidates();
+    symbolActive = -1;
+    if (!items.length) {
+      symbolList.innerHTML = '<li class="combo-empty">无匹配预设，可直接输入任意币安 USDT 交易对</li>';
+      return;
+    }
+    symbolList.innerHTML = items.map(function (s) {
+      return '<li data-v="' + s.v + '"><span class="sym">' + s.v
+        + '</span><span class="zh">' + s.zh + '</span></li>';
+    }).join("");
+  }
+
+  function symbolOpen() { symbolRender(); symbolList.classList.remove("hidden"); }
+  function symbolClose() { symbolList.classList.add("hidden"); symbolActive = -1; }
+
+  symbolInput.addEventListener("focus", symbolOpen);
+  symbolInput.addEventListener("click", symbolOpen);
+  symbolInput.addEventListener("input", function () { symbolOpen(); saveConfig(); });
+
+  symbolToggle.addEventListener("click", function (ev) {
+    ev.stopPropagation();
+    if (symbolList.classList.contains("hidden")) symbolOpen(); else symbolClose();
+    symbolInput.focus();
+  });
+
+  symbolList.addEventListener("mousedown", function (ev) {
+    var li = ev.target.closest("li");
+    if (!li || !li.dataset.v) return;
+    ev.preventDefault(); /* 防止 input 先失焦关闭列表 */
+    symbolInput.value = li.dataset.v;
+    symbolClose();
+    saveConfig();
+    symbolInput.dispatchEvent(new Event("change"));
+  });
+
+  symbolInput.addEventListener("keydown", function (ev) {
+    if (symbolList.classList.contains("hidden")) return;
+    if (ev.key === "Escape") { symbolClose(); return; }
+    var lis = symbolList.querySelectorAll("li[data-v]");
+    if (!lis.length) return;
+    if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      ev.preventDefault();
+      symbolActive = ev.key === "ArrowDown"
+        ? (symbolActive + 1) % lis.length
+        : (symbolActive - 1 + lis.length) % lis.length;
+      Array.prototype.forEach.call(lis, function (el, i) {
+        el.classList.toggle("active", i === symbolActive);
+        if (i === symbolActive) el.scrollIntoView({ block: "nearest" });
+      });
+    } else if (ev.key === "Enter" && symbolActive >= 0 && lis[symbolActive]) {
+      ev.preventDefault();
+      symbolInput.value = lis[symbolActive].dataset.v;
+      symbolClose();
+      saveConfig();
+    }
+  });
+
+  document.addEventListener("click", function (ev) {
+    if (!ev.target.closest("#symbol-combo")) symbolClose();
+  });
 
   /* ── 状态指示 ── */
   function setStatus(mode, text) {

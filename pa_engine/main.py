@@ -125,7 +125,8 @@ def _print_outcome(outcome, as_json: bool) -> int:
     if isinstance(stance, dict) and stance.get("label_zh"):
         print(
             f"下单倾向: {stance['label_zh']}（RR≥{stance.get('min_rr')}，"
-            f"方程余量≥{stance.get('min_equation_gap')}）"
+            f"方程余量≥{stance.get('min_equation_gap')}，胜率≥{stance.get('min_win_rate')}%，"
+            f"信号棒≥{stance.get('signal_pass_score')}/4）"
         )
     print(f"灰区: need_llm={outcome.gray_zone.need_llm} 调用={outcome.llm_called} "
           f"prompt={outcome.prompt_stats.get('bytes', 0)}B")

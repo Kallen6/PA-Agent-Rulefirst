@@ -423,6 +423,7 @@ def _base_decision(
         "take_profit_price_2": None,
         "estimated_win_rate": None,
         "estimated_win_rate_reasoning": "",
+        "trade_confidence": None,
         "entry_basis_bar": None,
         "entry_basis_extreme": None,
         "entry_rule": None,
@@ -447,6 +448,7 @@ def _revoke_plan(
         "take_profit_price",
         "take_profit_price_2",
         "estimated_win_rate",
+        "trade_confidence",
         "entry_basis_bar",
         "entry_basis_extreme",
         "entry_rule",
@@ -489,6 +491,9 @@ def _apply_plan(decision: dict[str, Any], plan: TradePlan, ctx: GateContext) -> 
             "take_profit_price_2": plan.tp2,
             "estimated_win_rate": plan.estimated_win_rate,
             "estimated_win_rate_reasoning": "代码路径使用状态胜率先验（灰区由 LLM 覆盖）",
+            # 执行层信心＝最终生效胜率（0–100）：与 §10.3 的 min_win_rate 门槛配套，
+            # 不下单时为 null；v1 的自报 trade_confidence 在 v2 由代码计算，可回测。
+            "trade_confidence": round(float(plan.estimated_win_rate)),
             "entry_basis_bar": f"K{plan.signal_bar_seq}" if plan.signal_bar_seq else None,
             "entry_basis_extreme": ("low" if bull else "high") if plan.signal_bar_seq else None,
             "entry_rule": (
@@ -682,6 +687,26 @@ def decide(
             ctx.extras["entry_style"] = "signal"
             results.extend(run_all(frame, ctx, nodes=SIGNAL_ENTRY_GATES + CONTEXT_ENTRY_GATES))
             blocker = _entry_blocker(results, "signal")
+            # 激进档回退（v1「突破单不可行时尝试限价单」的最小代码化）：
+            # 仅当信号棒是档位放宽才放行的边缘信号（score<3）被 §9.2/§9.5
+            # 否决时，回退评估 §9.0P 背景限价；score≥3 的合格信号被否决
+            # 说明结构矛盾，不回退。保守/均衡档不启用，路径顺序语义不变。
+            if (
+                blocker is not None
+                and policy.fallback_to_bg_limit
+                and signal_gate.evidence.get("score", 0) < 3
+            ):
+                limit_gate = run_all(frame, ctx, nodes=["9.0P"])[0]
+                results.append(limit_gate)
+                if limit_gate.answer is True:
+                    entry_style = "background_limit"
+                    ctx.extras["entry_style"] = "background_limit"
+                    ctx.extras.pop("order_route", None)  # 路由按新路径重算
+                    results.extend(run_all(frame, ctx, nodes=CONTEXT_ENTRY_GATES + ("9.7",)))
+                    blocker = _entry_blocker(results, "background_limit")
+                else:
+                    # 回退也失败：终态记 §9.0P 的失败原因（两路径皆不可行的最终裁定）
+                    blocker = limit_gate
         else:
             limit_gate = run_all(frame, ctx, nodes=["9.0P"])[0]
             results.append(limit_gate)
@@ -917,6 +942,7 @@ def decide(
                 else:
                     plan = updated_plan
                     decision["estimated_win_rate"] = plan.estimated_win_rate
+                    decision["trade_confidence"] = round(float(plan.estimated_win_rate))
                     decision["estimated_win_rate_reasoning"] = str(
                         llm_answer.get("win_rate_reason") or "感知层胜率判断"
                     )

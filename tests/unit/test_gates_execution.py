@@ -126,9 +126,19 @@ def test_9_0_quality_three_way() -> None:
     assert r2.answer is False and r2.branch == "fail"
 
     borderline = _bar(100.0, 100.1, wick=0.02, low_extra=0.15, high_extra=0.5)
-    r3 = run_all(_entry_frame(borderline, _bar(100.1, 100.3)), _ctx("bullish"), nodes=["9.0"])[0]
+    # 三分诊的「边界进灰区」语义用均衡档验证（pass=3）
+    r3 = run_all(
+        _entry_frame(borderline, _bar(100.1, 100.3)),
+        _ctx("bullish", stance="balanced"),
+        nodes=["9.0"],
+    )[0]
     assert r3.evidence["score"] == 2
     assert r3.confidence < 0.8, "边界质量必须进入灰区"
+
+    # 激进档（pass=2）：同一根边界信号棒被档位提升为合格（P0 入场容忍度）
+    r3b = run_all(_entry_frame(borderline, _bar(100.1, 100.3)), _ctx("bullish"), nodes=["9.0"])[0]
+    assert r3b.answer is True and r3b.branch == "pass"
+    assert r3b.evidence["pass_score"] == 2
 
 
 # ── §10 风险 ─────────────────────────────────────────────────────────────────

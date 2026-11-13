@@ -88,14 +88,20 @@ def gate_9_0(frame: FrameLike, ctx: GateContext) -> GateResult:
 
     score = sum(1 for ok in factors.values() if ok)
     cycle = str(ctx.extras.get("cycle_position") or "")
+    from pa_engine.engine.stance import stance_of
+
+    policy = stance_of(ctx)
+    pass_score = policy.signal_pass_score
+    fail_score = policy.signal_fail_score
     if cycle == "trading_range":
         sf = structure_of(frame, ctx)
         if sf.zone == "middle_third":
-            score = min(score, Entry.QUALITY_FAIL_SCORE)
+            # 中部强制压线：无论档位一律不合格（各档 fail_score ≥ 0）
+            score = min(score, fail_score)
 
-    if score >= Entry.QUALITY_PASS_SCORE:
+    if score >= pass_score:
         answer, branch, conf = True, "pass", 0.85
-    elif score <= Entry.QUALITY_FAIL_SCORE:
+    elif score <= fail_score:
         answer, branch, conf = False, "fail", 0.85
     else:
         answer, branch, conf = False, "borderline", 0.55
@@ -115,8 +121,14 @@ def gate_9_0(frame: FrameLike, ctx: GateContext) -> GateResult:
             "range_atr": range_atr,
             "candle": label,
             "cycle_position": cycle or None,
+            "pass_score": pass_score,
+            "fail_score": fail_score,
+            "stance": policy.name,
         },
-        reason=f"信号棒K{int(bars[idx].seq)}质量{score}/4（{_factor_text(factors)}）→{label_text}",
+        reason=(
+            f"信号棒K{int(bars[idx].seq)}质量{score}/4（{_factor_text(factors)}）→{label_text}"
+            f"（{policy.label_zh}档：≥{pass_score}合格、≤{fail_score}不合格）"
+        ),
     )
 
 
@@ -331,16 +343,27 @@ def gate_9_0p(frame: FrameLike, ctx: GateContext) -> GateResult:
             return GateResult("9.0P", False, "wrong_side", 0.85, evidence, "做空限价须高于K1收盘")
         if not stop > entry:
             return GateResult("9.0P", False, "bad_stop", 0.85, evidence, "结构失效位须高于限价入场")
-    if distance < Entry.BACKGROUND_LIMIT_MIN_ATR * atr:
-        return GateResult("9.0P", False, "too_close", 0.85, evidence, "结构位贴现价，等同市价追单")
-    if distance > Entry.BACKGROUND_LIMIT_MAX_ATR * atr:
+    # 档位只放宽「距离边界」：乘数作用于 ATR 距离区间，其余硬禁令不变
+    from pa_engine.engine.stance import stance_of
+
+    policy = stance_of(ctx)
+    min_atr = Entry.BACKGROUND_LIMIT_MIN_ATR * policy.bg_limit_min_mult
+    max_atr = Entry.BACKGROUND_LIMIT_MAX_ATR * policy.bg_limit_max_mult
+    evidence["bg_limit_min_atr"] = round(min_atr, 4)
+    evidence["bg_limit_max_atr"] = round(max_atr, 4)
+    evidence["stance"] = policy.name
+    if distance < min_atr * atr:
+        return GateResult(
+            "9.0P", False, "too_close", 0.85, evidence, "结构位贴现价，等同市价追单"
+        )
+    if distance > max_atr * atr:
         return GateResult("9.0P", False, "too_far", 0.85, evidence, "结构位距现价过远，不具备可执行性")
     if direction == "bullish" and float(bars[0].low) <= stop:
         return GateResult("9.0P", False, "stop_hit", 0.85, evidence, "K1已触及止损，方案失效")
     if direction == "bearish" and float(bars[0].high) >= stop:
         return GateResult("9.0P", False, "stop_hit", 0.85, evidence, "K1已触及止损，方案失效")
 
-    confidence = 0.8 if distance <= Entry.BACKGROUND_LIMIT_MAX_ATR * atr * 0.75 else 0.65
+    confidence = 0.8 if distance <= max_atr * atr * 0.75 else 0.65
     ctx.extras["background_limit"] = {
         "entry": entry,
         "stop": stop,

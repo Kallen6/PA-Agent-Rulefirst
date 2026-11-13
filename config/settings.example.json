@@ -25,7 +25,7 @@
       "data.base_url": "留空自动选择；走代理/镜像时填代理地址",
       "data.api_key": "公共 K 线无需鉴权；私有接口才填",
       "data.api_secret": "公共 K 线无需鉴权；私有接口才填",
-      "engine.decision_stance": "下单倾向档位：conservative（RR≥1.5）/ balanced（默认，RR≥1.2）/ aggressive（RR≥1.0）/ extreme_aggressive（方程余量放宽到 -5%）；只改执行门槛，不改周期与方向",
+      "engine.decision_stance": "下单倾向档位：conservative / balanced（默认）/ aggressive / extreme_aggressive；控制 §9 信号棒门槛、§9.0P 距离区间与 §10 RR/方程/胜率下限，激进档起信号失败自动回退背景限价；不改周期与方向",
       "provider.api_key": "engine.llm_enabled=true 时必填；公共行情不需要"
     },
     "gaps": {
